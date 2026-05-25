@@ -25,7 +25,7 @@ if (!databaseUrl) {
  * during Next.js development hot-reloads.
  */
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __pgPool: Pool | undefined;
 }
 
