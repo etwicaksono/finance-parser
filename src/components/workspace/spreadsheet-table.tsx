@@ -143,13 +143,15 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
       const catName = categories.find((c) => c.id === t.categoryId)?.name || "";
       const accName = accounts.find((a) => a.id === t.accountId)?.name || "";
       
+      const sanitize = (str: string) => str.replace(/[\t\n\r]/g, " ");
+
       return [
-        t.date || "",
-        t.item || "",
-        t.amount?.toString() || "",
-        catName,
-        accName,
-        t.notes || ""
+        sanitize(t.date || ""),
+        sanitize(t.item || ""),
+        t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
+        sanitize(catName),
+        sanitize(accName),
+        sanitize(t.notes || "")
       ].join("\t");
     });
   
