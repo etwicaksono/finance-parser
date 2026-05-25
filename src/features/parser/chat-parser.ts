@@ -20,7 +20,7 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
   let activeSender: string | undefined = undefined;
 
   for (let i = 0; i < lines.length; i++) {
-    const originalLine = lines[i];
+    const originalLine = lines[i]!;
     const trimmedLine = originalLine.trim();
 
     if (!trimmedLine) continue;
@@ -38,13 +38,13 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
       // Example: [5/16, 11:38] Budi: Semangka 20k
       const senderMatch = trimmedLine.match(/^\[.*?\]\s*([^:]+):\s*(.*)/);
       if (senderMatch) {
-        activeSender = senderMatch[1].trim();
-        contentToParse = senderMatch[2].trim();
+        activeSender = senderMatch[1]?.trim();
+        contentToParse = senderMatch[2]?.trim() || "";
       } else {
         // No sender found (e.g. system message or manually typed without sender)
         const contentMatch = trimmedLine.match(/^\[.*?\]\s*(.*)/);
         if (contentMatch) {
-          contentToParse = contentMatch[1].trim();
+          contentToParse = contentMatch[1]?.trim() || "";
         }
       }
     }

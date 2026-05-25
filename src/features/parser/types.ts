@@ -6,8 +6,8 @@
 export interface ParsedTransaction {
   item: string;
   amount: number;
-  date?: string;
-  sender?: string;
+  date?: string | undefined;
+  sender?: string | undefined;
 }
 
 export interface ParseResult {

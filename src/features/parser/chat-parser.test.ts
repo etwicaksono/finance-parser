@@ -102,7 +102,7 @@ Makasih
 
     const result = parseChat(chat, 2026);
     expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0].item).toBe("Semangka");
+    expect(result.transactions[0]?.item).toBe("Semangka");
   });
 
   it("handles empty or invalid inputs", () => {
