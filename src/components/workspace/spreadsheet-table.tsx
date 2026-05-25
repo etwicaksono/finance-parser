@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { TransactionRow } from "@/types";
 import { CategoryDropdown } from "./category-dropdown";
+import { AccountDropdown } from "./account-dropdown";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
@@ -36,6 +37,9 @@ const MOCK_ACCOUNTS = [
   { id: "a2", name: "BCA" },
   { id: "a3", name: "Mandiri" },
 ];
+
+// Mock recent accounts for prioritization feature (e.g., most used accounts)
+const RECENT_ACCOUNTS = ["a1", "a3"];
 
 export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
@@ -251,9 +255,23 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                         data-col-index={colIndex}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                       >
-                        {isEditing && isDropdown ? (
+                        {isEditing && cell.column.id === "accountId" ? (
+                          <AccountDropdown
+                            options={MOCK_ACCOUNTS}
+                            recentIds={RECENT_ACCOUNTS}
+                            value={editValue}
+                            onSelect={(newVal) => {
+                              saveEdit(rowIndex, colIndex, newVal || "");
+                              focusCell(rowIndex, colIndex);
+                            }}
+                            onClose={() => {
+                              setEditingCell(null);
+                              focusCell(rowIndex, colIndex);
+                            }}
+                          />
+                        ) : isEditing && cell.column.id === "categoryId" ? (
                           <CategoryDropdown
-                            options={cell.column.id === "categoryId" ? MOCK_CATEGORIES : MOCK_ACCOUNTS}
+                            options={MOCK_CATEGORIES}
                             value={editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
