@@ -1,54 +1,15 @@
-"use client";
+import { getCategories } from "@/actions/categories";
+import { HomeClient } from "@/components/workspace/home-client";
+import { CategoryOption } from "@/types";
 
-import { useState } from "react";
-import { AppShell } from "@/components/layout/app-shell";
-import { MainWorkspace } from "@/components/layout/main-workspace";
-import { WhatsAppInput } from "@/components/workspace/whatsapp-input";
-import { SpreadsheetTable } from "@/components/workspace/spreadsheet-table";
-import { TransactionRow } from "@/types";
-import { parseChat } from "@/features/parser/chat-parser";
-import { suggestCategory } from "@/features/suggestions/category-suggester";
-import { detectDuplicates } from "@/features/validation/duplicate-detector";
-import { format } from "date-fns";
+export default async function HomePage() {
+  const { data } = await getCategories();
+  
+  // Transform DB model to UI option
+  const categories: CategoryOption[] = (data || []).map((cat: any) => ({
+    id: cat.id,
+    name: cat.name,
+  }));
 
-export default function HomePage() {
-  const [transactions, setTransactions] = useState<TransactionRow[]>([]);
-
-  const handleParse = (text: string) => {
-    const result = parseChat(text);
-    
-    const mockMappings: any[] = [];
-    const mockAliases: any[] = [];
-
-    const newRows: TransactionRow[] = result.transactions.map((t, index) => {
-      const finalDate = t.date || format(new Date(), "yyyy-MM-dd");
-      const suggestion = suggestCategory(t.item, mockMappings, mockAliases);
-
-      return {
-        id: crypto.randomUUID(),
-        date: finalDate,
-        item: t.item,
-        amount: t.amount,
-        categoryId: suggestion?.categoryId || null,
-        accountId: null,
-        notes: t.sender ? `Sender: ${t.sender}` : "",
-      };
-    });
-
-    setTransactions((prev) => {
-      const processedNewRows = detectDuplicates(newRows, prev);
-      return [...prev, ...processedNewRows];
-    });
-  };
-
-  return (
-    <AppShell>
-      <MainWorkspace
-        inputPanel={<WhatsAppInput onParse={handleParse} />}
-        spreadsheetPanel={
-          <SpreadsheetTable data={transactions} onDataChange={setTransactions} />
-        }
-      />
-    </AppShell>
-  );
+  return <HomeClient initialCategories={categories} />;
 }

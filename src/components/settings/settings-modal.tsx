@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings2, Tag, Wallet, BookA } from "lucide-react";
+import { CategoriesTab } from "./categories-tab";
 
 interface SettingsModalProps {
   open: boolean;
@@ -49,9 +50,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
             <div className="flex-1 overflow-y-auto mt-4 border rounded-md p-4 bg-muted/10">
               <TabsContent value="categories" className="h-full mt-0">
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                  <p>Categories management will be implemented here.</p>
-                </div>
+                <CategoriesTab />
               </TabsContent>
 
               <TabsContent value="accounts" className="h-full mt-0">

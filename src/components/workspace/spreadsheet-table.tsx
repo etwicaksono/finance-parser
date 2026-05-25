@@ -19,21 +19,15 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { TransactionRow } from "@/types";
+import { CategoryOption, TransactionRow } from "@/types";
 import { CategoryDropdown } from "./category-dropdown";
 import { AccountDropdown } from "./account-dropdown";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
+  categories: CategoryOption[];
   onDataChange?: (data: TransactionRow[]) => void;
 }
-
-const MOCK_CATEGORIES = [
-  { id: "c1", name: "Food & Beverage" },
-  { id: "c2", name: "Transport" },
-  { id: "c3", name: "Utilities" },
-  { id: "c4", name: "Entertainment" },
-];
 
 const MOCK_ACCOUNTS = [
   { id: "a1", name: "Cash" },
@@ -43,7 +37,7 @@ const MOCK_ACCOUNTS = [
 
 const RECENT_ACCOUNTS = ["a1", "a3"];
 
-export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) {
+export function SpreadsheetTable({ data, categories, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
@@ -111,7 +105,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
         header: "Category",
         cell: (info) => {
           const val = info.getValue() as string;
-          return MOCK_CATEGORIES.find((c) => c.id === val)?.name || "-";
+          return categories.find((c) => c.id === val)?.name || "-";
         },
       },
       {
@@ -128,7 +122,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
         cell: (info) => info.getValue() || "",
       },
     ],
-    []
+    [categories]
   );
 
   const table = useReactTable({
@@ -151,7 +145,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     
     const tsvData = rowsToCopy.map((row) => {
       const t = row.original;
-      const catName = MOCK_CATEGORIES.find((c) => c.id === t.categoryId)?.name || "";
+      const catName = categories.find((c) => c.id === t.categoryId)?.name || "";
       const accName = MOCK_ACCOUNTS.find((a) => a.id === t.accountId)?.name || "";
       
       return [
@@ -349,7 +343,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                           />
                         ) : isEditing && cell.column.id === "categoryId" ? (
                           <CategoryDropdown
-                            options={MOCK_CATEGORIES}
+                            options={categories}
                             value={editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
