@@ -7,7 +7,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy } from "lucide-react";
+import { Copy, AlertTriangle } from "lucide-react";
 
 import {
   Table,
@@ -84,7 +84,19 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
       {
         accessorKey: "item",
         header: "Item",
-        cell: (info) => info.getValue(),
+        cell: (info) => {
+          const isDup = info.row.original.isDuplicate;
+          return (
+            <div className="flex items-center gap-2">
+              <span>{info.getValue() as string}</span>
+              {isDup && (
+                <span title="Possible duplicate detected">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                </span>
+              )}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "amount",
