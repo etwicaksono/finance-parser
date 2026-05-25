@@ -10,13 +10,14 @@ import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";
 import { detectDuplicates } from "@/features/validation/duplicate-detector";
 import { format } from "date-fns";
-import { CategoryOption } from "@/types";
+import { CategoryOption, AccountOption } from "@/types";
 
 interface HomeClientProps {
   initialCategories: CategoryOption[];
+  initialAccounts: AccountOption[];
 }
 
-export function HomeClient({ initialCategories }: HomeClientProps) {
+export function HomeClient({ initialCategories, initialAccounts }: HomeClientProps) {
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
 
   const handleParse = (text: string) => {
@@ -55,6 +56,7 @@ export function HomeClient({ initialCategories }: HomeClientProps) {
             data={transactions} 
             onDataChange={setTransactions} 
             categories={initialCategories}
+            accounts={initialAccounts}
           />
         }
       />

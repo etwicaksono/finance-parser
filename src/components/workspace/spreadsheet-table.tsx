@@ -19,25 +19,20 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CategoryOption, TransactionRow } from "@/types";
+import { CategoryOption, AccountOption, TransactionRow } from "@/types";
 import { CategoryDropdown } from "./category-dropdown";
 import { AccountDropdown } from "./account-dropdown";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
   categories: CategoryOption[];
+  accounts: AccountOption[];
   onDataChange?: (data: TransactionRow[]) => void;
 }
 
-const MOCK_ACCOUNTS = [
-  { id: "a1", name: "Cash" },
-  { id: "a2", name: "BCA" },
-  { id: "a3", name: "Mandiri" },
-];
+const RECENT_ACCOUNTS: string[] = []; // You could calculate this based on recent usage later
 
-const RECENT_ACCOUNTS = ["a1", "a3"];
-
-export function SpreadsheetTable({ data, categories, onDataChange }: SpreadsheetTableProps) {
+export function SpreadsheetTable({ data, categories, accounts, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
@@ -113,7 +108,7 @@ export function SpreadsheetTable({ data, categories, onDataChange }: Spreadsheet
         header: "Account",
         cell: (info) => {
           const val = info.getValue() as string;
-          return MOCK_ACCOUNTS.find((a) => a.id === val)?.name || "-";
+          return accounts.find((a) => a.id === val)?.name || "-";
         },
       },
       {
@@ -122,7 +117,7 @@ export function SpreadsheetTable({ data, categories, onDataChange }: Spreadsheet
         cell: (info) => info.getValue() || "",
       },
     ],
-    [categories]
+    [categories, accounts]
   );
 
   const table = useReactTable({
@@ -146,7 +141,7 @@ export function SpreadsheetTable({ data, categories, onDataChange }: Spreadsheet
     const tsvData = rowsToCopy.map((row) => {
       const t = row.original;
       const catName = categories.find((c) => c.id === t.categoryId)?.name || "";
-      const accName = MOCK_ACCOUNTS.find((a) => a.id === t.accountId)?.name || "";
+      const accName = accounts.find((a) => a.id === t.accountId)?.name || "";
       
       return [
         t.date || "",
@@ -329,7 +324,7 @@ export function SpreadsheetTable({ data, categories, onDataChange }: Spreadsheet
                       >
                         {isEditing && cell.column.id === "accountId" ? (
                           <AccountDropdown
-                            options={MOCK_ACCOUNTS}
+                            options={accounts}
                             recentIds={RECENT_ACCOUNTS}
                             value={editValue}
                             onSelect={(newVal) => {

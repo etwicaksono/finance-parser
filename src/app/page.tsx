@@ -1,15 +1,24 @@
 import { getCategories } from "@/actions/categories";
+import { getAccounts } from "@/actions/accounts";
 import { HomeClient } from "@/components/workspace/home-client";
-import { CategoryOption } from "@/types";
+import { CategoryOption, AccountOption } from "@/types";
 
 export default async function HomePage() {
-  const { data } = await getCategories();
+  const [categoriesRes, accountsRes] = await Promise.all([
+    getCategories(),
+    getAccounts(),
+  ]);
   
   // Transform DB model to UI option
-  const categories: CategoryOption[] = (data || []).map((cat: any) => ({
+  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: any) => ({
     id: cat.id,
     name: cat.name,
   }));
 
-  return <HomeClient initialCategories={categories} />;
+  const accounts: AccountOption[] = (accountsRes.data || []).map((acc: any) => ({
+    id: acc.id,
+    name: acc.name,
+  }));
+
+  return <HomeClient initialCategories={categories} initialAccounts={accounts} />;
 }
