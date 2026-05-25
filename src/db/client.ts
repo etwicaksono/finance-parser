@@ -1,61 +1,39 @@
 /**
- * Database client singleton using Drizzle ORM + node-postgres.
- *
- * Uses a connection pool via the `pg` Pool class.
- * The singleton pattern prevents multiple pool instances
- * from being created during Next.js hot-reloads in development.
+ * Database client singleton using Drizzle ORM + better-sqlite3.
  */
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import Database from "better-sqlite3";
+import path from "path";
+import fs from "fs";
 import * as schema from "./schema/index";
 
-// Validate required env var at module load time
-const databaseUrl = process.env["DATABASE_URL"];
-
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URL environment variable is not set. " +
-      "Please create a .env.local file based on .env.example."
-  );
+// Ensure the .data directory exists
+const dbPath = path.resolve(process.cwd(), ".data");
+if (!fs.existsSync(dbPath)) {
+  fs.mkdirSync(dbPath, { recursive: true });
 }
 
 /**
- * Global pool reference to prevent multiple connections
+ * Global database reference to prevent multiple connections
  * during Next.js development hot-reloads.
  */
 declare global {
-   
-  var __pgPool: Pool | undefined;
+  var __sqliteDb: Database.Database | undefined;
 }
 
-function createPool(): Pool {
-  return new Pool({
-    connectionString: databaseUrl,
-    max: 10, // max pool connections
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
-  });
+function createDatabase(): Database.Database {
+  const sqlite = new Database(path.join(dbPath, "sqlite.db"));
+  sqlite.pragma("journal_mode = WAL");
+  return sqlite;
 }
 
-// Reuse pool in development to avoid exhausting connections
-const pool =
-  process.env["NODE_ENV"] === "production"
-    ? createPool()
-    : (globalThis.__pgPool ??= createPool());
+const sqlite = globalThis.__sqliteDb ??= createDatabase();
 
-/**
- * Drizzle ORM database instance.
- * Use this for all database operations throughout the app.
- *
- * @example
- * import { db } from "@/db/client";
- * const results = await db.select().from(schema.categories);
- */
-export const db = drizzle(pool, {
+export const db = drizzle(sqlite, {
   schema,
   casing: "snake_case",
   logger: process.env["NODE_ENV"] === "development",
 });
 
-export type Database = typeof db;
+export type DatabaseType = typeof db;

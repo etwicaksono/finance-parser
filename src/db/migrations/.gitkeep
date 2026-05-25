@@ -1,4 +1,0 @@
-# Drizzle ORM generated migrations
-# This folder is managed by drizzle-kit — do not edit manually.
-# Run `npm run db:generate` to create new migrations.
-# Run `npm run db:migrate` to apply migrations to the database.
