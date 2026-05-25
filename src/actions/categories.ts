@@ -1,0 +1,46 @@
+"use server";
+
+import { db } from "@/db";
+import { categories } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+
+export async function getCategories() {
+  try {
+    const allCategories = await db.select().from(categories).all();
+    return { data: allCategories };
+  } catch (error) {
+    console.error("Failed to fetch categories:", error);
+    return { error: "Failed to fetch categories" };
+  }
+}
+
+export async function addCategory(name: string) {
+  if (!name || name.trim() === "") {
+    return { error: "Category name is required" };
+  }
+
+  try {
+    const inserted = await db.insert(categories).values({ name: name.trim() }).returning().get();
+    revalidatePath("/");
+    return { data: inserted };
+  } catch (error) {
+    console.error("Failed to add category:", error);
+    return { error: "Failed to add category" };
+  }
+}
+
+export async function deleteCategory(id: string) {
+  if (!id) {
+    return { error: "Category ID is required" };
+  }
+
+  try {
+    const deleted = await db.delete(categories).where(eq(categories.id, id)).returning().get();
+    revalidatePath("/");
+    return { data: deleted };
+  } catch (error) {
+    console.error("Failed to delete category:", error);
+    return { error: "Failed to delete category. It might be used in mappings." };
+  }
+}
