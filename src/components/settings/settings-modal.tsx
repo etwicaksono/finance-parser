@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings2, Tag, Wallet, BookA } from "lucide-react";
 import { CategoriesTab } from "./categories-tab";
 import { AccountsTab } from "./accounts-tab";
+import { MappingsTab } from "./mappings-tab";
 
 interface SettingsModalProps {
   open: boolean;
@@ -59,9 +60,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </TabsContent>
 
               <TabsContent value="mappings" className="h-full mt-0">
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                  <p>Keyword mappings and aliases will be implemented here.</p>
-                </div>
+                <MappingsTab />
               </TabsContent>
             </div>
           </Tabs>
