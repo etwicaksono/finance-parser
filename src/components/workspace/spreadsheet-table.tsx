@@ -7,6 +7,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import { Copy } from "lucide-react";
 
 import {
   Table,
@@ -16,6 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TransactionRow } from "@/types";
 import { CategoryDropdown } from "./category-dropdown";
 import { AccountDropdown } from "./account-dropdown";
@@ -38,13 +41,13 @@ const MOCK_ACCOUNTS = [
   { id: "a3", name: "Mandiri" },
 ];
 
-// Mock recent accounts for prioritization feature (e.g., most used accounts)
 const RECENT_ACCOUNTS = ["a1", "a3"];
 
 export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
+  const [rowSelection, setRowSelection] = React.useState({});
 
   React.useEffect(() => {
     setTableData(data);
@@ -52,6 +55,27 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
 
   const columns = React.useMemo<ColumnDef<TransactionRow>[]>(
     () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="flex h-full w-full items-center justify-center px-2">
+            <Checkbox
+              checked={row.getIsSelected()}
+              onCheckedChange={(value) => row.toggleSelected(!!value)}
+              aria-label="Select row"
+            />
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
       {
         accessorKey: "date",
         header: "Date",
@@ -99,7 +123,41 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     data: tableData,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    onRowSelectionChange: setRowSelection,
+    state: {
+      rowSelection,
+    },
   });
+
+  const handleCopy = React.useCallback(() => {
+    const selectedRows = table.getFilteredSelectedRowModel().rows;
+    const rowsToCopy = selectedRows.length > 0 ? selectedRows : table.getRowModel().rows;
+    
+    if (rowsToCopy.length === 0) return;
+  
+    const headers = ["Date", "Item", "Amount", "Category", "Account", "Notes"];
+    
+    const tsvData = rowsToCopy.map((row) => {
+      const t = row.original;
+      const catName = MOCK_CATEGORIES.find((c) => c.id === t.categoryId)?.name || "";
+      const accName = MOCK_ACCOUNTS.find((a) => a.id === t.accountId)?.name || "";
+      
+      return [
+        t.date || "",
+        t.item || "",
+        t.amount?.toString() || "",
+        catName,
+        accName,
+        t.notes || ""
+      ].join("\t");
+    });
+  
+    const finalTsv = [headers.join("\t"), ...tsvData].join("\n");
+    navigator.clipboard.writeText(finalTsv).then(() => {
+      // Could show a toast notification here
+      console.log("Copied to clipboard!");
+    });
+  }, [table]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
     setTimeout(() => {
@@ -156,7 +214,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
         setTableData(newData);
         onDataChange?.(newData);
         
-        return null; // clearing the editing cell
+        return null;
       });
     },
     [columns, editValue, tableData, onDataChange]
@@ -166,14 +224,12 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
 
     const colDef = columns[colIndex];
+    const isSelectCol = colDef && colDef.id === "select";
     const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
     const isDropdown = key === "categoryId" || key === "accountId";
 
     if (isEditing) {
-      // Dropdown handles its own keyboard navigation for Enter/Esc/Arrows
-      if (isDropdown) {
-        return; 
-      }
+      if (isDropdown) return;
 
       if (e.key === "Enter") {
         e.preventDefault();
@@ -193,7 +249,6 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
       return;
     }
 
-    // Normal navigation
     let nextRow = rowIndex;
     let nextCol = colIndex;
 
@@ -201,11 +256,14 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     else if (e.key === "ArrowDown") nextRow = Math.min(tableData.length - 1, rowIndex + 1);
     else if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
     else if (e.key === "ArrowRight") nextCol = Math.min(columns.length - 1, colIndex + 1);
-    else if (e.key === "Enter") {
+    else if (e.key === "Enter" && !isSelectCol) {
       e.preventDefault();
       startEditing(rowIndex, colIndex);
       return;
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown) {
+    } else if (e.key === " " && isSelectCol) {
+      // Let space toggle checkbox
+      return;
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown && !isSelectCol) {
       startEditing(rowIndex, colIndex, e.key);
       e.preventDefault();
       return;
@@ -219,13 +277,20 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
 
   return (
     <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <h2 className="font-semibold">Spreadsheet</h2>
+        <Button size="sm" variant="outline" onClick={handleCopy} disabled={tableData.length === 0}>
+          <Copy className="mr-2 h-4 w-4" />
+          {Object.keys(rowSelection).length > 0 ? "Copy Selected" : "Copy All"}
+        </Button>
+      </div>
       <div className="flex-1 overflow-auto">
         <Table className="border-collapse">
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="border-r border-border font-semibold text-muted-foreground">
+                  <TableHead key={header.id} className="border-r border-border font-semibold text-muted-foreground p-0 px-2 h-10">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -245,6 +310,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                   {row.getVisibleCells().map((cell, colIndex) => {
                     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
                     const isDropdown = cell.column.id === "categoryId" || cell.column.id === "accountId";
+                    const isSelectCol = cell.column.id === "select";
 
                     return (
                       <TableCell
@@ -292,8 +358,10 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                           />
                         ) : (
                           <div
-                            className="min-h-[40px] px-2 py-2 cursor-text focus:outline-none focus:bg-primary/10"
-                            onDoubleClick={() => startEditing(rowIndex, colIndex)}
+                            className={`min-h-[40px] ${isSelectCol ? '' : 'px-2 py-2 cursor-text'} focus:outline-none focus:bg-primary/10`}
+                            onDoubleClick={() => {
+                              if (!isSelectCol) startEditing(rowIndex, colIndex);
+                            }}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </div>
