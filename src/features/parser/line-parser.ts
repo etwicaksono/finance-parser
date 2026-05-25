@@ -31,6 +31,12 @@ export function parseLine(line: string): ParsedTransaction | null {
     return null;
   }
 
+  // Prevent parsing the year of a date (e.g. "15/05/2026") as an amount
+  // If itemStr ends with a date separator without spaces, it's likely part of a date.
+  if (itemStr.match(/[-/]$/) && !amountStr.toLowerCase().match(/[a-z]/)) {
+    return null;
+  }
+
   const amount = parseAmount(amountStr);
   if (amount === null) {
     return null;
