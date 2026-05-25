@@ -25,6 +25,8 @@ interface SpreadsheetTableProps {
 
 export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
+  const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
+  const [editValue, setEditValue] = React.useState<string>("");
 
   // Sync prop data to local state
   React.useEffect(() => {
@@ -76,8 +78,90 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     getCoreRowModel: getCoreRowModel(),
   });
 
-  // Handle keyboard navigation (Arrow keys)
+  const focusCell = React.useCallback((row: number, col: number) => {
+    setTimeout(() => {
+      const targetCell = document.querySelector(`[data-row-index="${row}"][data-col-index="${col}"]`) as HTMLElement;
+      if (targetCell) {
+        targetCell.focus();
+      }
+    }, 0);
+  }, []);
+
+  const startEditing = React.useCallback(
+    (rowIndex: number, colIndex: number, initialValue?: string) => {
+      const colDef = columns[colIndex];
+      if (!colDef || !("accessorKey" in colDef)) return;
+
+      const key = (colDef as any).accessorKey;
+      if (!["date", "item", "amount", "notes"].includes(key)) return;
+
+      setEditingCell({ rowIndex, colIndex });
+
+      if (initialValue !== undefined) {
+        setEditValue(initialValue);
+      } else {
+        const row = tableData[rowIndex];
+        const val = (row as any)[key];
+        setEditValue(val !== null && val !== undefined ? String(val) : "");
+      }
+    },
+    [columns, tableData]
+  );
+
+  const saveEdit = React.useCallback(
+    (rowIndex: number, colIndex: number) => {
+      // Use the functional state update or refs to avoid stale closures,
+      // but since we only save what's in `editValue`, it should be fine.
+      setEditingCell((prev) => {
+        if (!prev || prev.rowIndex !== rowIndex || prev.colIndex !== colIndex) return prev;
+        
+        const colDef = columns[colIndex];
+        if (!colDef || !("accessorKey" in colDef)) return null;
+        
+        const key = (colDef as any).accessorKey;
+        const newData = [...tableData];
+        const row = { ...newData[rowIndex] };
+
+        if (key === "amount") {
+          const parsed = parseFloat(editValue.replace(/\./g, "").replace(",", "."));
+          (row as any)[key] = isNaN(parsed) ? null : parsed;
+        } else {
+          (row as any)[key] = editValue;
+        }
+
+        newData[rowIndex] = row as TransactionRow;
+        setTableData(newData);
+        onDataChange?.(newData);
+        
+        return null;
+      });
+    },
+    [columns, editValue, tableData, onDataChange]
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
+    const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
+
+    if (isEditing) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveEdit(rowIndex, colIndex);
+        const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+        focusCell(nextRow, colIndex);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setEditingCell(null);
+        focusCell(rowIndex, colIndex);
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        saveEdit(rowIndex, colIndex);
+        const nextCol = Math.min(columns.length - 1, colIndex + 1);
+        focusCell(rowIndex, nextCol);
+      }
+      return;
+    }
+
+    // Normal navigation
     let nextRow = rowIndex;
     let nextCol = colIndex;
 
@@ -85,13 +169,20 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
     else if (e.key === "ArrowDown") nextRow = Math.min(tableData.length - 1, rowIndex + 1);
     else if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
     else if (e.key === "ArrowRight") nextCol = Math.min(columns.length - 1, colIndex + 1);
-    else return;
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      startEditing(rowIndex, colIndex);
+      return;
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      startEditing(rowIndex, colIndex, e.key);
+      e.preventDefault();
+      return;
+    } else {
+      return;
+    }
 
     e.preventDefault();
-    const targetCell = document.querySelector(`[data-row-index="${nextRow}"][data-col-index="${nextCol}"]`) as HTMLElement;
-    if (targetCell) {
-      targetCell.focus();
-    }
+    focusCell(nextRow, nextCol);
   };
 
   return (
@@ -119,20 +210,37 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                   data-state={row.getIsSelected() && "selected"}
                   className="hover:bg-muted/30"
                 >
-                  {row.getVisibleCells().map((cell, colIndex) => (
-                    <TableCell
-                      key={cell.id}
-                      className="border-r border-border p-2 focus:bg-primary/10 focus:outline-none focus:ring-1 focus:ring-primary focus:ring-inset"
-                      tabIndex={0}
-                      data-row-index={rowIndex}
-                      data-col-index={colIndex}
-                      onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
-                    >
-                      <div className="min-h-[24px] cursor-text">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </div>
-                    </TableCell>
-                  ))}
+                  {row.getVisibleCells().map((cell, colIndex) => {
+                    const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
+
+                    return (
+                      <TableCell
+                        key={cell.id}
+                        className="border-r border-border p-0 focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset"
+                        tabIndex={isEditing ? -1 : 0}
+                        data-row-index={rowIndex}
+                        data-col-index={colIndex}
+                        onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            className="h-full w-full bg-transparent px-2 py-2 outline-none"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => saveEdit(rowIndex, colIndex)}
+                          />
+                        ) : (
+                          <div
+                            className="min-h-[40px] px-2 py-2 cursor-text focus:outline-none focus:bg-primary/10"
+                            onDoubleClick={() => startEditing(rowIndex, colIndex)}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </div>
+                        )}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))
             ) : (
