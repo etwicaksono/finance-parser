@@ -15,9 +15,9 @@ export function parseLine(line: string): ParsedTransaction | null {
   if (!line || !line.trim()) return null;
 
   // Regex to split item name and amount string at the end of the line
-  // It handles optional separators like =, =>, -, :
+  // It handles optional separators like =, =>, ->, -, :
   // It matches amounts with optional Rp prefix, numbers with separators, and optional multipliers
-  const regex = /^(.*?)\s*(?:=|=>|-|:)?\s*((?:rp\.?\s*)?\d+(?:[.,]\d+)*(?:\s*(?:k|rb|ribu|m|jt|juta))?)\s*$/i;
+  const regex = /^(.*?)\s*(?:=|=>|->|-|:)?\s*((?:rp\.?\s*)?\d+(?:[.,]\d+)*(?:\s*(?:k|rb|ribu|m|jt|juta))?)\s*$/i;
   
   const match = line.match(regex);
   if (!match) {

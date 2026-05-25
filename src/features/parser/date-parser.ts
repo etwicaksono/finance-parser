@@ -103,3 +103,15 @@ function formatIso(y: number, m: number, d: number): string | null {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${y}-${pad(m)}-${pad(d)}`;
 }
+
+/**
+ * Checks if the given text is solely a date declaration.
+ * This prevents a line like "Kamis, 14-05-2026" from being parsed as a transaction.
+ */
+export function isJustDate(text: string): boolean {
+  const dayNames = "(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu|monday|tuesday|wednesday|thursday|friday|saturday|sunday)";
+  const numericDate = "\\d{1,2}[-/\\s.]+\\d{1,2}(?:[-/\\s.]+\\d{2,4})?";
+  const textDate = "\\d{1,2}\\s+(?:jan|feb|mar|apr|mei|may|jun|jul|agu|aug|sep|okt|oct|nov|des|dec)[a-z]*(?:\\s+\\d{2,4})?";
+  const regex = new RegExp(`^(?:${dayNames}\\s*,?\\s*)?(?:${numericDate}|${textDate})$`, "i");
+  return regex.test(text.trim());
+}

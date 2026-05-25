@@ -1,5 +1,5 @@
 import { ParseResult, ParsedTransaction } from "./types";
-import { extractChatDate, extractExplicitDate } from "./date-parser";
+import { extractChatDate, extractExplicitDate, isJustDate } from "./date-parser";
 import { parseLine } from "./line-parser";
 
 /**
@@ -55,6 +55,10 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
     const explicitDate = extractExplicitDate(contentToParse, defaultYear);
     if (explicitDate) {
       activeDate = explicitDate;
+      // If the line is exclusively a date declaration, do not treat it as a transaction
+      if (isJustDate(contentToParse)) {
+        continue;
+      }
     }
 
     // 3. Try to parse as a transaction line

@@ -109,4 +109,20 @@ Makasih
     expect(parseChat("").transactions).toHaveLength(0);
     expect(parseChat("   ").transactions).toHaveLength(0);
   });
+
+  describe("Bug Fixes", () => {
+    it("should skip parsing a line as transaction if it is exclusively an explicit date", () => {
+      const input = `[5/16, 11:38] Eko: Kamis, 14-05-2026
+Semangka -> 2k`;
+      const result = parseChat(input, 2026);
+      
+      expect(result.transactions).toHaveLength(1);
+      expect(result.transactions[0]).toEqual({
+        date: "2026-05-14",
+        item: "Semangka",
+        amount: -2000,
+        sender: "Eko",
+      });
+    });
+  });
 });
