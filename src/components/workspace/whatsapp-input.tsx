@@ -5,13 +5,17 @@ import { Play, Trash2, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-export function WhatsAppInput() {
+interface WhatsAppInputProps {
+  onParse?: (text: string) => void;
+}
+
+export function WhatsAppInput({ onParse }: WhatsAppInputProps) {
   const [text, setText] = useState("");
 
   const handleParse = () => {
-    // Placeholder for parsing logic (will be implemented in later tasks)
-    // eslint-disable-next-line no-console
-    console.log("Parsing text:", text);
+    if (onParse && text) {
+      onParse(text);
+    }
   };
 
   const handleClear = () => {
