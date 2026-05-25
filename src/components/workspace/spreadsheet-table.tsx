@@ -17,18 +17,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TransactionRow } from "@/types";
+import { CategoryDropdown } from "./category-dropdown";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
   onDataChange?: (data: TransactionRow[]) => void;
 }
 
+const MOCK_CATEGORIES = [
+  { id: "c1", name: "Food & Beverage" },
+  { id: "c2", name: "Transport" },
+  { id: "c3", name: "Utilities" },
+  { id: "c4", name: "Entertainment" },
+];
+
+const MOCK_ACCOUNTS = [
+  { id: "a1", name: "Cash" },
+  { id: "a2", name: "BCA" },
+  { id: "a3", name: "Mandiri" },
+];
+
 export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
 
-  // Sync prop data to local state
   React.useEffect(() => {
     setTableData(data);
   }, [data]);
@@ -56,12 +69,18 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
       {
         accessorKey: "categoryId",
         header: "Category",
-        cell: (info) => info.getValue() || "-", // Placeholder until TASK-016 Dropdown
+        cell: (info) => {
+          const val = info.getValue() as string;
+          return MOCK_CATEGORIES.find((c) => c.id === val)?.name || "-";
+        },
       },
       {
         accessorKey: "accountId",
         header: "Account",
-        cell: (info) => info.getValue() || "-",
+        cell: (info) => {
+          const val = info.getValue() as string;
+          return MOCK_ACCOUNTS.find((a) => a.id === val)?.name || "-";
+        },
       },
       {
         accessorKey: "notes",
@@ -93,7 +112,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
       if (!colDef || !("accessorKey" in colDef)) return;
 
       const key = (colDef as any).accessorKey;
-      if (!["date", "item", "amount", "notes"].includes(key)) return;
+      if (!["date", "item", "amount", "notes", "categoryId", "accountId"].includes(key)) return;
 
       setEditingCell({ rowIndex, colIndex });
 
@@ -109,9 +128,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
   );
 
   const saveEdit = React.useCallback(
-    (rowIndex: number, colIndex: number) => {
-      // Use the functional state update or refs to avoid stale closures,
-      // but since we only save what's in `editValue`, it should be fine.
+    (rowIndex: number, colIndex: number, explicitValue?: string) => {
       setEditingCell((prev) => {
         if (!prev || prev.rowIndex !== rowIndex || prev.colIndex !== colIndex) return prev;
         
@@ -122,18 +139,20 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
         const newData = [...tableData];
         const row = { ...newData[rowIndex] };
 
+        const valToSave = explicitValue !== undefined ? explicitValue : editValue;
+
         if (key === "amount") {
-          const parsed = parseFloat(editValue.replace(/\./g, "").replace(",", "."));
+          const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
           (row as any)[key] = isNaN(parsed) ? null : parsed;
         } else {
-          (row as any)[key] = editValue;
+          (row as any)[key] = valToSave;
         }
 
         newData[rowIndex] = row as TransactionRow;
         setTableData(newData);
         onDataChange?.(newData);
         
-        return null;
+        return null; // clearing the editing cell
       });
     },
     [columns, editValue, tableData, onDataChange]
@@ -142,7 +161,16 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
 
+    const colDef = columns[colIndex];
+    const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
+    const isDropdown = key === "categoryId" || key === "accountId";
+
     if (isEditing) {
+      // Dropdown handles its own keyboard navigation for Enter/Esc/Arrows
+      if (isDropdown) {
+        return; 
+      }
+
       if (e.key === "Enter") {
         e.preventDefault();
         saveEdit(rowIndex, colIndex);
@@ -173,7 +201,7 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
       e.preventDefault();
       startEditing(rowIndex, colIndex);
       return;
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown) {
       startEditing(rowIndex, colIndex, e.key);
       e.preventDefault();
       return;
@@ -212,17 +240,31 @@ export function SpreadsheetTable({ data, onDataChange }: SpreadsheetTableProps) 
                 >
                   {row.getVisibleCells().map((cell, colIndex) => {
                     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
+                    const isDropdown = cell.column.id === "categoryId" || cell.column.id === "accountId";
 
                     return (
                       <TableCell
                         key={cell.id}
-                        className="border-r border-border p-0 focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset"
-                        tabIndex={isEditing ? -1 : 0}
+                        className="relative border-r border-border p-0 focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset"
+                        tabIndex={isEditing && !isDropdown ? -1 : 0}
                         data-row-index={rowIndex}
                         data-col-index={colIndex}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                       >
-                        {isEditing ? (
+                        {isEditing && isDropdown ? (
+                          <CategoryDropdown
+                            options={cell.column.id === "categoryId" ? MOCK_CATEGORIES : MOCK_ACCOUNTS}
+                            value={editValue}
+                            onSelect={(newVal) => {
+                              saveEdit(rowIndex, colIndex, newVal || "");
+                              focusCell(rowIndex, colIndex);
+                            }}
+                            onClose={() => {
+                              setEditingCell(null);
+                              focusCell(rowIndex, colIndex);
+                            }}
+                          />
+                        ) : isEditing ? (
                           <input
                             autoFocus
                             className="h-full w-full bg-transparent px-2 py-2 outline-none"
