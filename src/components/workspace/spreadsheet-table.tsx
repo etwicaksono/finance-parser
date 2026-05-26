@@ -37,6 +37,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
   const [editingCell, setEditingCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
   const [rowSelection, setRowSelection] = React.useState({});
+  const [copiedCell, setCopiedCell] = React.useState<{ rowIndex: number; colIndex: number } | null>(null);
 
   React.useEffect(() => {
     setTableData(data);
@@ -259,7 +260,27 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
     else if (e.key === "ArrowDown") nextRow = Math.min(tableData.length - 1, rowIndex + 1);
     else if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
     else if (e.key === "ArrowRight") nextCol = Math.min(columns.length - 1, colIndex + 1);
-    else if (e.key === "Enter" && !isSelectCol) {
+    else if (e.key === "c" && (e.ctrlKey || e.metaKey) && !isSelectCol) {
+      // Ctrl+C on a focused cell → copy just this cell's value
+      e.preventDefault();
+      const row = tableData[rowIndex];
+      if (!row) return;
+      let cellValue = "";
+      if (key === "categoryId") {
+        cellValue = categories.find((c) => c.id === row.categoryId)?.name || "";
+      } else if (key === "accountId") {
+        cellValue = accounts.find((a) => a.id === row.accountId)?.name || "";
+      } else if (key === "amount") {
+        cellValue = row.amount !== null && row.amount !== undefined ? row.amount.toString() : "";
+      } else if (key) {
+        cellValue = String((row as any)[key] ?? "");
+      }
+      navigator.clipboard.writeText(cellValue).then(() => {
+        setCopiedCell({ rowIndex, colIndex });
+        setTimeout(() => setCopiedCell(null), 600);
+      });
+      return;
+    } else if (e.key === "Enter" && !isSelectCol) {
       e.preventDefault();
       startEditing(rowIndex, colIndex);
       return;
@@ -315,10 +336,12 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
                     const isDropdown = cell.column.id === "categoryId" || cell.column.id === "accountId";
                     const isSelectCol = cell.column.id === "select";
 
+                    const isCopied = copiedCell?.rowIndex === rowIndex && copiedCell?.colIndex === colIndex;
+
                     return (
                       <TableCell
                         key={cell.id}
-                        className="relative border-r border-border p-0 focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset"
+                        className={`relative border-r border-border p-0 focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset transition-colors ${isCopied ? "bg-green-500/20" : ""}`}
                         tabIndex={isEditing && !isDropdown ? -1 : 0}
                         data-row-index={rowIndex}
                         data-col-index={colIndex}
