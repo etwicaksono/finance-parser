@@ -1,6 +1,8 @@
 export interface KeywordMapping {
   keyword: string;
-  categoryId: string;
+  categoryId: string | null;
+  aiCategory?: string;
+  aiParentCategory?: string;
   usageCount: number;
 }
 
@@ -10,7 +12,9 @@ export interface AliasMapping {
 }
 
 export interface SuggestionMatch {
-  categoryId: string;
+  categoryId: string | null;
+  aiCategory?: string;
+  aiParentCategory?: string;
   confidence: number;
   source: "exact" | "alias" | "fuzzy";
 }

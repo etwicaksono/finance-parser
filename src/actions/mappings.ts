@@ -44,6 +44,40 @@ export async function addMapping(keyword: string, categoryId: string) {
   }
 }
 
+export async function addAiMapping(keyword: string, aiCategory: string, aiParentCategory: string) {
+  if (!keyword || keyword.trim() === "") {
+    return { error: "Keyword is required" };
+  }
+
+  try {
+    const inserted = await db
+      .insert(keywordMappings)
+      .values({
+        keyword: keyword.trim().toLowerCase(),
+        aiCategory,
+        aiParentCategory,
+      })
+      // If keyword already exists (e.g. from manual DB), we can choose to update or ignore.
+      // Let's just update the AI parts if it already exists.
+      .onConflictDoUpdate({
+        target: keywordMappings.keyword,
+        set: {
+          aiCategory,
+          aiParentCategory,
+          updatedAt: new Date(),
+        }
+      })
+      .returning()
+      .get();
+      
+    revalidatePath("/");
+    return { data: inserted };
+  } catch (error: any) {
+    console.error("Failed to add AI mapping:", error);
+    return { error: "Failed to add AI mapping" };
+  }
+}
+
 export async function deleteMapping(id: string) {
   if (!id) {
     return { error: "Mapping ID is required" };

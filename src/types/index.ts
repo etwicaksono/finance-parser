@@ -1,3 +1,5 @@
+import { SuggestionMatch } from "@/features/suggestions/types";
+
 export interface CategoryOption {
   id: string;
   name: string;
@@ -25,7 +27,12 @@ export interface TransactionRow {
   // UI Specific State
   isDuplicate?: boolean;
   isValid?: boolean;
-  suggestion?: SuggestionResult;
+  suggestion?: SuggestionMatch;
+  // AI Categorization State
+  aiCategory?: string;
+  aiParentCategory?: string;
+  aiType?: "income" | "expense";
+  aiConfidence?: number;
 }
 
 export interface ParserResult {

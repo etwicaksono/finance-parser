@@ -79,7 +79,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
 
   const getCellValue = React.useCallback(
     (row: TransactionRow, colKey: string): string => {
-      if (colKey === "categoryId") return categories.find((c) => c.id === row.categoryId)?.name || "";
+      if (colKey === "categoryId") return row.aiCategory || categories.find((c) => c.id === row.categoryId)?.name || "";
       if (colKey === "accountId") return accounts.find((a) => a.id === row.accountId)?.name || "";
       if (colKey === "amount") return row.amount !== null && row.amount !== undefined ? row.amount.toString() : "";
       return String((row as any)[colKey] ?? "");
@@ -144,6 +144,8 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         accessorKey: "categoryId",
         header: "Category",
         cell: (info) => {
+          const row = info.row.original;
+          if (row.aiCategory) return row.aiCategory;
           const val = info.getValue() as string;
           return categories.find((c) => c.id === val)?.name || "-";
         },
@@ -218,7 +220,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         sanitize(t.date || ""),
         sanitize(t.item || ""),
         t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
-        sanitize(categories.find((c) => c.id === t.categoryId)?.name || ""),
+        sanitize(t.aiCategory || categories.find((c) => c.id === t.categoryId)?.name || ""),
         sanitize(accounts.find((a) => a.id === t.accountId)?.name || ""),
         sanitize(t.notes || ""),
       ].join("\t");

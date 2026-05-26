@@ -41,9 +41,12 @@ export function findFuzzyMatch(
   const fuseScore = bestMatch.score ?? 1;
   const confidence = calculateFuzzyConfidence(fuseScore, bestMatch.item.usageCount);
 
-  return {
+  const result: SuggestionMatch = {
     categoryId: bestMatch.item.categoryId,
     confidence,
     source: "fuzzy",
   };
+  if (bestMatch.item.aiCategory) result.aiCategory = bestMatch.item.aiCategory;
+  if (bestMatch.item.aiParentCategory) result.aiParentCategory = bestMatch.item.aiParentCategory;
+  return result;
 }

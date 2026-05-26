@@ -34,11 +34,14 @@ export function findExactMatch(
     const baseScore = isAlias ? 0.9 : 0.95; // Alias gives a slightly lower base confidence
     const confidence = calculateConfidence(baseScore, matchedMapping.usageCount);
 
-    return {
+    const result: SuggestionMatch = {
       categoryId: matchedMapping.categoryId,
       confidence,
       source: isAlias ? "alias" : "exact",
     };
+    if (matchedMapping.aiCategory) result.aiCategory = matchedMapping.aiCategory;
+    if (matchedMapping.aiParentCategory) result.aiParentCategory = matchedMapping.aiParentCategory;
+    return result;
   }
 
   return null;
