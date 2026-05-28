@@ -125,4 +125,54 @@ Semangka -> 2k`;
       });
     });
   });
+
+  describe("Comprehensive Scenarios", () => {
+    it("handles iOS style exports", () => {
+      const chat = `
+[16/05/2026 11:38:00] Budi: Makan siang 50rb
+[17/05/2026 12:00:15] Andi: Kopi 15k
+      `.trim();
+      const result = parseChat(chat, 2026);
+      expect(result.transactions).toHaveLength(2);
+      expect(result.transactions[0]?.date).toBe("2026-05-16");
+      expect(result.transactions[1]?.date).toBe("2026-05-17");
+    });
+
+    it("handles positive values (income/transfers)", () => {
+      const chat = `
+[16/05/2026, 11:38] Bos: Gaji bulanan +5000k
+[16/05/2026, 11:39] Bos: Uang lembur +500.000
+      `.trim();
+      const result = parseChat(chat, 2026);
+      expect(result.transactions).toHaveLength(2);
+      expect(result.transactions[0]?.amount).toBe(5000000);
+      expect(result.transactions[1]?.amount).toBe(500000);
+    });
+
+    it("handles decimals and different number formats", () => {
+      const chat = `
+[16/05/2026, 11:38] Eko: Bensin 20.5k
+[16/05/2026, 11:39] Eko: Parkir 2,5rb
+      `.trim();
+      const result = parseChat(chat, 2026);
+      expect(result.transactions).toHaveLength(2);
+      expect(result.transactions[0]?.amount).toBe(-20500);
+      expect(result.transactions[1]?.amount).toBe(-2500);
+    });
+
+    it("handles chat with mixed conversational text and transactions", () => {
+      const chat = `
+[16/05/2026, 11:38] Eko: Halo semua
+[16/05/2026, 11:38] Eko: Ini laporan hari ini
+[16/05/2026, 11:39] Eko: Beli Galon 20k
+[16/05/2026, 11:39] Eko: Token listrik 50.000
+[16/05/2026, 11:40] Eko: Udah ya makasih!
+      `.trim();
+      const result = parseChat(chat, 2026);
+      expect(result.transactions).toHaveLength(2);
+      expect(result.transactions[0]?.item).toBe("Beli Galon");
+      expect(result.transactions[1]?.item).toBe("Token listrik");
+    });
+  });
 });
+

@@ -1,0 +1,266 @@
+{
+  "income": [
+    {
+      "name": "Income",
+      "children": [
+        {
+          "name": "Checks, coupons"
+        },
+        {
+          "name": "Child Support"
+        },
+        {
+          "name": "Dues & grants"
+        },
+        {
+          "name": "Gifts"
+        },
+        {
+          "name": "Interests"
+        },
+        {
+          "name": "Lending, renting"
+        },
+        {
+          "name": "Dividens"
+        },
+        {
+          "name": "Refunds (tax, purchase)"
+        },
+        {
+          "name": "Rental income"
+        },
+        {
+          "name": "Sale"
+        },
+        {
+          "name": "Wage, invoices"
+        }
+      ]
+    }
+  ],
+  "expense": {
+    "Food & Drinks": {
+      "children": [
+        {
+          "name": "Bar, cafe, snack"
+        },
+        {
+          "name": "Groceries, main meal"
+        },
+        {
+          "name": "Restaurant, fast-food"
+        }
+      ]
+    },
+    "Shopping": {
+      "children": [
+        {
+          "name": "Clothes & Footwear"
+        },
+        {
+          "name": "Drug-store, chemist"
+        },
+        {
+          "name": "Electronics, accessories"
+        },
+        {
+          "name": "Toiletries"
+        },
+        {
+          "name": "Gifts, joy"
+        },
+        {
+          "name": "Skincare, Make Up"
+        },
+        {
+          "name": "Home, garden"
+        },
+        {
+          "name": "Jewels, accessories"
+        },
+        {
+          "name": "Kids"
+        },
+        {
+          "name": "Pets, animals"
+        },
+        {
+          "name": "Stationery, tools"
+        }
+      ]
+    },
+    "Housing": {
+      "children": [
+        {
+          "name": "Energy, utilities"
+        },
+        {
+          "name": "Maintenance, repairs"
+        },
+        {
+          "name": "Mortgage"
+        },
+        {
+          "name": "Property insurance"
+        },
+        {
+          "name": "Rent"
+        },
+        {
+          "name": "Services"
+        }
+      ]
+    },
+    "Transportation": {
+      "children": [
+        {
+          "name": "Business trips"
+        },
+        {
+          "name": "Long distance"
+        },
+        {
+          "name": "Public transport"
+        },
+        {
+          "name": "Taxi"
+        }
+      ]
+    },
+    "Vehicle": {
+      "children": [
+        {
+          "name": "Fuel"
+        },
+        {
+          "name": "Leasing"
+        },
+        {
+          "name": "Parking"
+        },
+        {
+          "name": "Rentals"
+        },
+        {
+          "name": "Vehicle insurance"
+        },
+        {
+          "name": "Vehicle maintenance"
+        }
+      ]
+    },
+    "Life & entertainment": {
+      "children": [
+        {
+          "name": "Active sport, fitness"
+        },
+        {
+          "name": "Alcohol, tobacco"
+        },
+        {
+          "name": "Books, audio, subscriptions"
+        },
+        {
+          "name": "Charity, gifts"
+        },
+        {
+          "name": "Culture, sport events"
+        },
+        {
+          "name": "Education, development"
+        },
+        {
+          "name": "Health care, doctor"
+        },
+        {
+          "name": "Hobbies"
+        },
+        {
+          "name": "Holiday, trips, hotels"
+        },
+        {
+          "name": "Life events"
+        },
+        {
+          "name": "Lottery, gambling"
+        },
+        {
+          "name": "Wellness, beauty"
+        },
+        {
+          "name": "Movie, TV, Streaming"
+        }
+      ]
+    },
+    "Communication, Gadgets": {
+      "children": [
+        {
+          "name": "Internet, phone credit"
+        },
+        {
+          "name": "Laptop, Smartphone"
+        },
+        {
+          "name": "Postal services"
+        },
+        {
+          "name": "Software, apps, games"
+        }
+      ]
+    },
+    "Financial expenses": {
+      "children": [
+        {
+          "name": "Advisory"
+        },
+        {
+          "name": "Charges, Fees"
+        },
+        {
+          "name": "Child Support"
+        },
+        {
+          "name": "Fines"
+        },
+        {
+          "name": "Insurances"
+        },
+        {
+          "name": "Loans, interests"
+        },
+        {
+          "name": "Taxes"
+        }
+      ]
+    },
+    "Investments": {
+      "children": [
+        {
+          "name": "Collection"
+        },
+        {
+          "name": "Financial investments"
+        },
+        {
+          "name": "Realty"
+        },
+        {
+          "name": "Savings"
+        },
+        {
+          "name": "Vehicles, chattels"
+        }
+      ]
+    }
+  },
+  "both": {
+    "Others": {
+      "children": [
+        {
+          "name": "Missing"
+        }
+      ]
+    }
+  }
+}

@@ -24,10 +24,10 @@ describe("detectDuplicates", () => {
     expect(result[0]?.isDuplicate).toBe(true);
   });
 
-  it("detects duplicate with nearby date (within 2 days)", () => {
+  it("ignores same item and amount if date is different (even if nearby)", () => {
     const newRows = [createRow("3", "Makan Siang", -25000, "2026-05-12")];
     const result = detectDuplicates(newRows, existingRows);
-    expect(result[0]?.isDuplicate).toBe(true);
+    expect(result[0]?.isDuplicate).toBe(false);
   });
 
   it("ignores same item and amount if date is far", () => {

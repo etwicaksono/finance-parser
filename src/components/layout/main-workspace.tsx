@@ -8,7 +8,7 @@ export function MainWorkspace({
   spreadsheetPanel,
 }: MainWorkspaceProps) {
   return (
-    <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+    <div className="flex flex-1 w-full h-full flex-col overflow-hidden lg:flex-row">
       {/* Left Panel: Input Area (WhatsApp Chat) */}
       <section className="flex flex-col border-b lg:w-[350px] lg:border-b-0 lg:border-r xl:w-[400px]">
         {inputPanel}

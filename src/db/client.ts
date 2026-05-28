@@ -1,40 +1,33 @@
 /**
- * Database client singleton using Drizzle ORM + better-sqlite3.
+ * Database client singleton using Drizzle ORM + PostgreSQL.
  *
- * This module automatically applies any pending SQLite migrations on startup,
+ * This module automatically applies any pending Postgres migrations on startup,
  * so no manual `npm run db:push` or `npm run db:migrate` is needed.
  */
 
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Pool } from "pg";
 import path from "path";
-import fs from "fs";
 import * as schema from "./schema/index";
-
-// Ensure the .data directory exists
-const dbDir = path.resolve(process.cwd(), ".data");
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
 
 /**
  * Global database reference to prevent multiple connections
  * during Next.js development hot-reloads.
  */
 declare global {
-  var __sqliteDb: Database.Database | undefined;
+  var __pgPool: Pool | undefined;
 }
 
-function createDatabase(): Database.Database {
-  const sqlite = new Database(path.join(dbDir, "sqlite.db"));
-  sqlite.pragma("journal_mode = WAL");
-  return sqlite;
+function createPool(): Pool {
+  return new Pool({
+    connectionString: process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/finance_parser",
+  });
 }
 
-const sqlite = globalThis.__sqliteDb ??= createDatabase();
+const pool = globalThis.__pgPool ??= createPool();
 
-export const db = drizzle(sqlite, {
+export const db = drizzle(pool, {
   schema,
   casing: "snake_case",
   logger: process.env["NODE_ENV"] === "development",
@@ -42,8 +35,16 @@ export const db = drizzle(sqlite, {
 
 // Auto-apply migrations so the app works out of the box on any machine.
 // Uses the pre-generated SQL files in src/db/migrations/.
+// We suppress the "relation already exists" error (pg code 42P07) that can
+// occur when multiple Next.js build workers run migrations in parallel.
 migrate(db, {
   migrationsFolder: path.resolve(process.cwd(), "src/db/migrations"),
+}).catch((err: any) => {
+  if (err?.cause?.code === "42P07" || err?.message?.includes("already exists")) {
+    // Tables already exist — safe to ignore during parallel builds.
+    return;
+  }
+  console.error("❌ Migration failed:", err);
 });
 
 export type DatabaseType = typeof db;

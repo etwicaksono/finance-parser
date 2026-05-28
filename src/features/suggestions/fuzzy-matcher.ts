@@ -46,7 +46,5 @@ export function findFuzzyMatch(
     confidence,
     source: "fuzzy",
   };
-  if (bestMatch.item.aiCategory) result.aiCategory = bestMatch.item.aiCategory;
-  if (bestMatch.item.aiParentCategory) result.aiParentCategory = bestMatch.item.aiParentCategory;
   return result;
 }

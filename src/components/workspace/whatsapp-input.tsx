@@ -7,9 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 
 interface WhatsAppInputProps {
   onParse?: (text: string) => void;
+  onClear?: () => void;
 }
 
-export function WhatsAppInput({ onParse }: WhatsAppInputProps) {
+export function WhatsAppInput({ onParse, onClear }: WhatsAppInputProps) {
   const [text, setText] = useState("");
 
   const handleParse = () => {
@@ -20,6 +21,7 @@ export function WhatsAppInput({ onParse }: WhatsAppInputProps) {
 
   const handleClear = () => {
     setText("");
+    if (onClear) onClear();
   };
 
   return (
@@ -52,14 +54,14 @@ export function WhatsAppInput({ onParse }: WhatsAppInputProps) {
         </div>
       </div>
       
-      <div className="flex-1 p-4">
+      <div className="flex-1 p-4 min-h-0 overflow-y-auto">
         <Textarea
           placeholder="Paste your WhatsApp chat here...
 
 Example:
 [5/16, 11:38] Semangka 20k
 [5/16, 11:38] Nasi Padang 25rb"
-          className="h-full min-h-[300px] resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+          className="min-h-[300px] resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />

@@ -1,7 +1,7 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, varchar, text, integer } from "drizzle-orm/pg-core";
 
-export const aliases = sqliteTable("aliases", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const aliases = pgTable("aliases", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   alias: text("alias").notNull().unique(),
   canonicalText: text("canonical_text").notNull(),
   usageCount: integer("usage_count").default(0).notNull(),

@@ -28,9 +28,7 @@ export interface TransactionRow {
   isDuplicate?: boolean;
   isValid?: boolean;
   suggestion?: SuggestionMatch;
-  // AI Categorization State
-  aiCategory?: string;
-  aiParentCategory?: string;
+  // AI Categorization State (runtime only — not persisted to DB)
   aiType?: "income" | "expense";
   aiConfidence?: number;
 }

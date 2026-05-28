@@ -39,8 +39,6 @@ export function findExactMatch(
       confidence,
       source: isAlias ? "alias" : "exact",
     };
-    if (matchedMapping.aiCategory) result.aiCategory = matchedMapping.aiCategory;
-    if (matchedMapping.aiParentCategory) result.aiParentCategory = matchedMapping.aiParentCategory;
     return result;
   }
 

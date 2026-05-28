@@ -1,15 +1,17 @@
 import { getCategories } from "@/actions/categories";
 import { getAccounts } from "@/actions/accounts";
-import { getMappings } from "@/actions/mappings";
+import { getAllMappings } from "@/actions/mappings";
 import { HomeClient } from "@/components/workspace/home-client";
 import { CategoryOption, AccountOption } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
+
+export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const [categoriesRes, accountsRes, mappingsRes] = await Promise.all([
     getCategories(),
     getAccounts(),
-    getMappings(),
+    getAllMappings(),
   ]);
   
   const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: any) => ({

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getAccounts, addAccount, deleteAccount } from "@/actions/accounts";
+import { getAccounts, addAccount, deleteAccount, updateAccount } from "@/actions/accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Plus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 type Account = {
   id: string;
@@ -51,7 +52,25 @@ export function AccountsTab() {
     const result = await deleteAccount(id);
     if (result.error) {
       setAccounts(previous);
-      alert(result.error);
+      toast.error(result.error);
+    } else {
+      toast.success("Account deleted");
+    }
+  };
+
+  const handleUpdate = async (id: string, newName: string) => {
+    if (!newName.trim()) return;
+    
+    setAccounts((prev) => 
+      prev.map((a) => (a.id === id ? { ...a, name: newName } : a))
+    );
+
+    const result = await updateAccount(id, newName);
+    if (result.error) {
+      toast.error(result.error);
+      fetchAccounts();
+    } else {
+      toast.success("Account updated");
     }
   };
 
@@ -84,13 +103,27 @@ export function AccountsTab() {
             No accounts found. Create one to get started.
           </div>
         ) : (
-          accounts.map((acc) => (
-            <div key={acc.id} className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
-              <span className="font-medium">{acc.name}</span>
+          accounts.map((acc, index) => (
+            <div key={acc.id} className="flex items-center p-1 hover:bg-muted/50 transition-colors group gap-2">
+              <span className="w-6 text-center text-xs text-muted-foreground shrink-0">
+                {index + 1}
+              </span>
+              <Input
+                defaultValue={acc.name}
+                className="flex-1 font-medium h-8 border-transparent hover:border-input focus:border-input bg-transparent shadow-none"
+                onBlur={(e) => {
+                  if (e.target.value !== acc.name) {
+                    handleUpdate(acc.id, e.target.value);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10"
                 onClick={() => handleDelete(acc.id)}
               >
                 <Trash2 className="h-4 w-4" />

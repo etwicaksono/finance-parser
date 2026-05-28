@@ -1,8 +1,8 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, varchar, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const categories = sqliteTable("categories", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`).notNull(),
+export const categories = pgTable("categories", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

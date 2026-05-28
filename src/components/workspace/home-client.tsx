@@ -9,10 +9,11 @@ import { TransactionRow, CategoryOption, AccountOption } from "@/types";
 import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";
 import { detectDuplicates } from "@/features/validation/duplicate-detector";
+import { getCategorySign } from "@/features/validation/category-sign";
 import { format } from "date-fns";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
-import { addAiMapping } from "@/actions/mappings";
+import { addMapping, batchAddMappings } from "@/actions/mappings";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -24,16 +25,20 @@ interface HomeClientProps {
 
 export function HomeClient({ initialCategories, initialAccounts, initialMappings }: HomeClientProps) {
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
-  const [isClassifying, setIsClassifying] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleParse = async (text: string) => {
-    // 1. Initial Parse
-    const result = parseChat(text);
-    const mockAliases: any[] = [];
-    const itemsToClassify: string[] = [];
+    setIsProcessing(true);
+    // Let React render the loading state
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    try {
+      // 1. Initial Parse
+      const result = parseChat(text);
+      const mockAliases: any[] = [];
+      const itemsToClassify: string[] = [];
 
-    // 2. Local Tier (Exact & Fuzzy Mappings)
-    const newRows: TransactionRow[] = result.transactions.map((t) => {
+      // 2. Local Tier (Exact & Fuzzy Mappings)
+      const newRows: TransactionRow[] = result.transactions.map((t) => {
       const finalDate = t.date || format(new Date(), "yyyy-MM-dd");
       const suggestion = suggestCategory(t.item, initialMappings, mockAliases);
 
@@ -49,41 +54,58 @@ export function HomeClient({ initialCategories, initialAccounts, initialMappings
 
       if (suggestion) {
         row.suggestion = suggestion;
-        if (suggestion.aiCategory) row.aiCategory = suggestion.aiCategory;
-        if (suggestion.aiParentCategory) row.aiParentCategory = suggestion.aiParentCategory;
       }
 
-      // If no valid category/AI category found locally, schedule for AI
-      if (!row.categoryId && !row.aiCategory) {
+      // If categoryId was found locally, fix the sign immediately
+      if (row.categoryId && row.amount) {
+        const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
+        if (catName) {
+          const sign = getCategorySign(catName);
+          if (sign === "income") row.amount = Math.abs(row.amount);
+          else if (sign === "expense") row.amount = -Math.abs(row.amount);
+        }
+      }
+
+      // If no valid categoryId found locally, schedule for AI classification
+      if (!row.categoryId) {
         itemsToClassify.push(row.item);
       }
 
       return row;
     });
 
-    // If there's nothing to ask AI, we can just deduplicate and group immediately.
-    if (itemsToClassify.length === 0) {
-      finalizeAndGroup(newRows);
-      return;
-    }
+      // If there's nothing to ask AI, we can just deduplicate and group immediately.
+      if (itemsToClassify.length === 0) {
+        finalizeAndGroup(newRows);
+        return;
+      }
 
-    // 3. AI Tier (Gemini)
-    setIsClassifying(true);
-    try {
+      // 3. AI Tier (Gemini)
       const aiResults = await batchClassifyTransactions(itemsToClassify);
       
       // Update rows with AI results and trigger learning loop
       for (const row of newRows) {
-        if (!row.categoryId && !row.aiCategory) {
+        if (!row.categoryId) {
           const aiCat = aiResults.get(row.item.toLowerCase().trim());
           if (aiCat) {
-            row.aiCategory = aiCat.category;
-            row.aiParentCategory = aiCat.parent_category;
             row.aiType = aiCat.type;
             row.aiConfidence = aiCat.confidence;
             
-            // Learning Loop: save back to DB in background
-            addAiMapping(row.item, aiCat.category, aiCat.parent_category).catch(console.error);
+            // Resolve AI category name → categoryId via initialCategories
+            const matchedCategory = initialCategories.find(
+              (c) => c.name.toLowerCase() === aiCat.category.toLowerCase()
+            );
+            if (matchedCategory) {
+              row.categoryId = matchedCategory.id;
+              // Fix sign based on AI category
+              const sign = getCategorySign(matchedCategory.name);
+              if (row.amount) {
+                if (sign === "income") row.amount = Math.abs(row.amount);
+                else if (sign === "expense") row.amount = -Math.abs(row.amount);
+              }
+              // Learning Loop: save back to DB so future parses use local lookup
+              addMapping(row.item, matchedCategory.id).catch(console.error);
+            }
           }
         }
       }
@@ -91,26 +113,35 @@ export function HomeClient({ initialCategories, initialAccounts, initialMappings
       finalizeAndGroup(newRows);
     } catch (error: any) {
       console.error(error);
-      toast.error(error.message || "Failed to classify transactions with AI");
-      // Stop the process as requested by user
+      toast.error(error.message || "Failed to process transactions");
     } finally {
-      setIsClassifying(false);
+      setIsProcessing(false);
     }
   };
 
   const finalizeAndGroup = (newRows: TransactionRow[]) => {
-    setTransactions((prev) => {
-      const allRows = [...prev, ...newRows];
-      const processed = detectDuplicates(allRows, prev);
+    const formatItemWithPrice = (item: string, amount: number | null | undefined) => {
+      if (!amount) return item;
+      if (item.includes("=>")) return item;
+      const kVal = Math.abs(amount) / 1000;
+      const kStr = Number.isInteger(kVal) ? `${kVal}k` : `${parseFloat(kVal.toFixed(1))}k`;
+      return `${item} => ${kStr}`;
+    };
+
+    newRows.forEach(row => {
+      row.item = formatItemWithPrice(row.item, row.amount);
+    });
+
+    setTransactions(() => {
+      const processedNewRows = detectDuplicates(newRows, []);
+      const allRows = [...processedNewRows];
       
       // Grouping Logic: Date × Category
       const map = new Map<string, TransactionRow>();
-      for (const row of processed) {
-        // Preference: aiCategory first, then DB categoryId, then Unknown
+      for (const row of allRows) {
+        // Resolve categoryId → category name for grouping key
         let catForGrouping = "Unknown";
-        if (row.aiCategory) {
-          catForGrouping = row.aiCategory;
-        } else if (row.categoryId) {
+        if (row.categoryId) {
           catForGrouping = initialCategories.find(c => c.id === row.categoryId)?.name || row.categoryId;
         }
 
@@ -122,9 +153,9 @@ export function HomeClient({ initialCategories, initialAccounts, initialMappings
           existing.amount = (existing.amount ?? 0) + (row.amount ?? 0);
           
           // Only add item if it's not already in the string
-          const itemParts = existing.item.split(", ").map(s => s.trim());
+          const itemParts = existing.item.split("\n").map(s => s.trim());
           if (row.item && !itemParts.includes(row.item.trim())) {
-             existing.item = [existing.item, row.item].filter(Boolean).join(", ");
+             existing.item = [existing.item, row.item].filter(Boolean).join("\n");
           }
           
           if (row.notes && !existing.notes.includes(row.notes)) {
@@ -138,21 +169,52 @@ export function HomeClient({ initialCategories, initialAccounts, initialMappings
     });
   };
 
+  const handleCategoryChange = (rowId: string, itemString: string, newCategoryId: string) => {
+    const rawItems = itemString.split("\n").map(s => {
+      const match = s.split("=>");
+      return match[0]?.trim() || "";
+    }).filter(Boolean);
+
+    for (const rawItem of rawItems) {
+      if (rawItem) {
+        addMapping(rawItem, newCategoryId).then(() => {
+          toast.success(`Mapped "${rawItem}" to new category`);
+        }).catch(err => {
+          console.error(err);
+          toast.error(`Failed to map "${rawItem}"`);
+        });
+      }
+    }
+  };
+
+  const handleCopyRows = async (copiedRows: TransactionRow[]) => {
+    // Extract keyword & category pairs to bump their usage score
+    const mappingsToBump = copiedRows
+      .filter((r) => r.item && r.categoryId)
+      .map((r) => ({ keyword: r.item, categoryId: r.categoryId! }));
+      
+    if (mappingsToBump.length > 0) {
+      batchAddMappings(mappingsToBump).catch(console.error);
+    }
+  };
+
   return (
     <AppShell>
       <MainWorkspace
-        inputPanel={<WhatsAppInput onParse={handleParse} />}
+        inputPanel={<WhatsAppInput onParse={handleParse} onClear={() => setTransactions([])} />}
         spreadsheetPanel={
-          <div className="relative h-full">
-            {isClassifying && (
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            {isProcessing && (
               <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/50 backdrop-blur-sm">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-sm font-medium">Classifying with AI...</p>
+                <p className="text-sm font-medium">Processing Data...</p>
               </div>
             )}
             <SpreadsheetTable 
               data={transactions} 
               onDataChange={setTransactions} 
+              onCategoryChange={handleCategoryChange}
+              onCopyRows={handleCopyRows}
               categories={initialCategories}
               accounts={initialAccounts}
             />

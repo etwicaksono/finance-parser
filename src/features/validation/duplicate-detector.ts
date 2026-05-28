@@ -5,7 +5,7 @@ import Fuse from "fuse.js";
 /**
  * Detects if new transactions are possible duplicates of existing ones.
  * Marks `isDuplicate: true` on suspected duplicate rows.
- * Criteria: Exact same amount, date within 2 days, and item name is very similar or identical.
+ * Criteria: Exact same amount, exact same date, and item name is very similar or identical.
  */
 export function detectDuplicates(
   newRows: TransactionRow[],
@@ -21,21 +21,8 @@ export function detectDuplicates(
       for (const existingRow of allRows) {
         if (existingRow.amount !== newRow.amount) continue;
 
-        // Check date proximity (within 2 days)
-        let isDateNearby = false;
-        if (newRow.date === existingRow.date) {
-          isDateNearby = true;
-        } else {
-          const d1 = parseISO(newRow.date);
-          const d2 = parseISO(existingRow.date);
-          if (isValid(d1) && isValid(d2)) {
-            if (Math.abs(differenceInDays(d1, d2)) <= 2) {
-              isDateNearby = true;
-            }
-          }
-        }
-
-        if (!isDateNearby) continue;
+        // Check exact date match
+        if (newRow.date !== existingRow.date) continue;
 
         // Check item similarity
         const item1 = newRow.item.trim().toLowerCase();

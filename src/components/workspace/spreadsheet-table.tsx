@@ -7,7 +7,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, AlertTriangle } from "lucide-react";
+import { Copy, AlertTriangle, Plus, Trash2 } from "lucide-react";
 
 import {
   Table,
@@ -19,15 +19,19 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getCategorySign } from "@/features/validation/category-sign";
 import { CategoryOption, AccountOption, TransactionRow } from "@/types";
 import { CategoryDropdown } from "./category-dropdown";
 import { AccountDropdown } from "./account-dropdown";
+import { FloatingEditor } from "./floating-editor";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
   categories: CategoryOption[];
   accounts: AccountOption[];
   onDataChange?: (data: TransactionRow[]) => void;
+  onCategoryChange?: (rowId: string, itemString: string, newCategoryId: string) => void;
+  onCopyRows?: (rows: TransactionRow[]) => void;
 }
 
 interface CellPos {
@@ -37,11 +41,39 @@ interface CellPos {
 
 const RECENT_ACCOUNTS: string[] = [];
 
-export function SpreadsheetTable({ data, categories, accounts, onDataChange }: SpreadsheetTableProps) {
+export function SpreadsheetTable({ data, categories, accounts, onDataChange, onCategoryChange, onCopyRows }: SpreadsheetTableProps) {
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
   const [rowSelection, setRowSelection] = React.useState({});
+
+  const insertRowBelow = React.useCallback((index: number) => {
+    setTableData(prev => {
+      const newData = [...prev];
+      const sourceRow = newData[index];
+      const newRow: TransactionRow = {
+        id: crypto.randomUUID(),
+        date: sourceRow ? sourceRow.date : "",
+        item: "",
+        amount: null,
+        categoryId: null,
+        accountId: sourceRow ? sourceRow.accountId : null,
+        notes: "",
+      };
+      newData.splice(index + 1, 0, newRow);
+      onDataChange?.(newData);
+      return newData;
+    });
+  }, [onDataChange]);
+
+  const deleteRow = React.useCallback((index: number) => {
+    setTableData(prev => {
+      const newData = [...prev];
+      newData.splice(index, 1);
+      onDataChange?.(newData);
+      return newData;
+    });
+  }, [onDataChange]);
 
   // Cell range selection (like Google Sheets)
   const [selectionAnchor, setSelectionAnchor] = React.useState<CellPos | null>(null);
@@ -79,7 +111,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
 
   const getCellValue = React.useCallback(
     (row: TransactionRow, colKey: string): string => {
-      if (colKey === "categoryId") return row.aiCategory || categories.find((c) => c.id === row.categoryId)?.name || "";
+      if (colKey === "categoryId") return categories.find((c) => c.id === row.categoryId)?.name || "";
       if (colKey === "accountId") return accounts.find((a) => a.id === row.accountId)?.name || "";
       if (colKey === "amount") return row.amount !== null && row.amount !== undefined ? row.amount.toString() : "";
       return String((row as any)[colKey] ?? "");
@@ -145,7 +177,6 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         header: "Category",
         cell: (info) => {
           const row = info.row.original;
-          if (row.aiCategory) return row.aiCategory;
           const val = info.getValue() as string;
           return categories.find((c) => c.id === val)?.name || "-";
         },
@@ -163,8 +194,36 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         header: "Notes",
         cell: (info) => info.getValue() || "",
       },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <div className="flex h-full w-full items-center justify-center gap-2 px-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 hover:bg-primary/20"
+              onClick={() => insertRowBelow(row.index)}
+              title="Add row below"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/20"
+              onClick={() => deleteRow(row.index)}
+              title="Delete row"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
     ],
-    [categories, accounts]
+    [categories, accounts, insertRowBelow, deleteRow]
   );
 
   const table = useReactTable({
@@ -183,9 +242,11 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
     const sanitize = (s: string) => s.replace(/[\t\n\r]/g, " ");
 
     const tsv: string[] = [];
+    const copiedOriginals: TransactionRow[] = [];
     for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
       const row = rows[r];
       if (!row) continue;
+      copiedOriginals.push(row.original);
       const rowValues: string[] = [];
       for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
         const colDef = columns[c];
@@ -202,8 +263,12 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
     navigator.clipboard.writeText(tsv.join("\n")).then(() => {
       setCopyFlash(true);
       setTimeout(() => setCopyFlash(false), 600);
+      
+      if (onCopyRows) {
+        onCopyRows(copiedOriginals);
+      }
     });
-  }, [selectionRange, table, columns, getCellValue]);
+  }, [selectionRange, table, columns, getCellValue, onCopyRows]);
 
   // Copy All / Copy Selected Rows button
   const handleCopyRows = React.useCallback(() => {
@@ -220,7 +285,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         sanitize(t.date || ""),
         sanitize(t.item || ""),
         t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
-        sanitize(t.aiCategory || categories.find((c) => c.id === t.categoryId)?.name || ""),
+        sanitize(categories.find((c) => c.id === t.categoryId)?.name || ""),
         sanitize(accounts.find((a) => a.id === t.accountId)?.name || ""),
         sanitize(t.notes || ""),
       ].join("\t");
@@ -230,8 +295,11 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
     navigator.clipboard.writeText(finalTsv).then(() => {
       setCopyFlash(true);
       setTimeout(() => setCopyFlash(false), 600);
+      if (onCopyRows) {
+        onCopyRows(rowsToCopy.map((r) => r.original));
+      }
     });
-  }, [table, categories, accounts]);
+  }, [table, categories, accounts, onCopyRows]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
     setTimeout(() => {
@@ -271,6 +339,37 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         if (key === "amount") {
           const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
           (row as any)[key] = isNaN(parsed) ? null : parsed;
+        } else if (key === "categoryId") {
+          const oldVal = (row as any)[key];
+          (row as any)[key] = valToSave;
+          if (oldVal !== valToSave && valToSave) {
+            onCategoryChange?.(row.id as string, row.item as string, valToSave as string);
+          }
+          // If category is manually edited, auto-adjust the amount sign
+          if (typeof row.amount === "number") {
+            const catName = categories.find((c) => c.id === valToSave)?.name;
+            if (catName) {
+              const sign = getCategorySign(catName);
+              if (sign === "income") row.amount = Math.abs(row.amount);
+              else if (sign === "expense") row.amount = -Math.abs(row.amount);
+            }
+          }
+        } else if (key === "item") {
+          (row as any)[key] = valToSave;
+          let sum = 0;
+          let hasPrice = false;
+          valToSave.split("\n").forEach((line: string) => {
+            const match = line.match(/=>\s*([\d\.]+)k?/i);
+            if (match && match[1]) {
+              hasPrice = true;
+              const val = parseFloat(match[1]);
+              sum += line.toLowerCase().includes("k") ? val * 1000 : val;
+            }
+          });
+          if (hasPrice) {
+            const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
+            (row as any).amount = sum * currentSign;
+          }
         } else {
           (row as any)[key] = valToSave;
         }
@@ -280,7 +379,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
         return null;
       });
     },
-    [columns, editValue, tableData, onDataChange]
+    [columns, editValue, tableData, onDataChange, onCategoryChange]
   );
 
   // Mouse handlers for drag-selection
@@ -400,7 +499,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
     : null;
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex flex-1 min-h-0 flex-col bg-background">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold">Spreadsheet</h2>
@@ -428,8 +527,8 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
           </Button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto" onMouseLeave={() => { isDragging.current = false; }}>
-        <Table className="border-collapse">
+      <div className="flex-1 min-h-0 relative" onMouseLeave={() => { isDragging.current = false; }}>
+        <Table className="border-collapse" containerClassName="absolute inset-0 overflow-auto pb-32">
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -471,6 +570,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
                     return (
                       <TableCell
                         key={cell.id}
+                        id={`cell-${rowIndex}-${colIndex}`}
                         className={[
                           "relative border-r border-border p-0 transition-colors",
                           isEditing ? "ring-1 ring-primary ring-inset z-10" : "",
@@ -517,23 +617,61 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange }: S
                               focusCell(rowIndex, colIndex);
                             }}
                           />
-                        ) : isEditing ? (
+                        ) : isEditing && cell.column.id === "date" ? (
                           <input
-                            autoFocus
+                            type="date"
+                            ref={(el) => {
+                              if (el && !el.dataset.pickerOpened) {
+                                el.dataset.pickerOpened = "true";
+                                el.focus();
+                                try {
+                                  el.showPicker();
+                                } catch (err) {
+                                  // Ignore error if showPicker is not supported or lacks user gesture
+                                }
+                              }
+                            }}
                             className="h-full w-full bg-transparent px-2 py-2 outline-none"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
                             onBlur={() => saveEdit(rowIndex, colIndex)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                saveEdit(rowIndex, colIndex);
+                                const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                                focusCell(nextRow, colIndex);
+                              }
+                            }}
                           />
                         ) : (
-                          <div
-                            className={`min-h-[40px] ${isSelectCol ? "" : "px-2 py-2 cursor-default select-none"}`}
-                            onDoubleClick={() => {
-                              if (!isSelectCol) startEditing(rowIndex, colIndex);
-                            }}
-                          >
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </div>
+                          <>
+                            <div
+                              className={`min-h-[40px] whitespace-pre-wrap ${isSelectCol ? "" : "px-2 py-2 cursor-default select-none"} ${isEditing ? "opacity-0" : ""}`}
+                              onDoubleClick={() => {
+                                if (!isSelectCol) startEditing(rowIndex, colIndex);
+                              }}
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                            {isEditing && (
+                              <FloatingEditor
+                                initialValue={editValue}
+                                targetCellId={`cell-${rowIndex}-${colIndex}`}
+                                onSave={(val) => saveEdit(rowIndex, colIndex, val)}
+                                onCancel={() => {
+                                  setEditingCell(null);
+                                  focusCell(rowIndex, colIndex);
+                                }}
+                                onNextRow={(val) => {
+                                  saveEdit(rowIndex, colIndex, val);
+                                  const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                                  focusCell(nextRow, colIndex);
+                                }}
+                              />
+                            )}
+                          </>
                         )}
                       </TableCell>
                     );
