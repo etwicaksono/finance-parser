@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3001:3000"
     env_file:
       - .env.docker
     # Optional: If you need to connect to a local PostgreSQL instance running on your host machine,
