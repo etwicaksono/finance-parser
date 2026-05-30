@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Smart Financial Inbox (Finance Parser)
 
-## Getting Started
+A Next.js application designed to parse, categorize, and organize unstructured financial transactions from various sources using AI. 
 
-First, run the development server:
+Whether it's a messy WhatsApp chat log, a physical shopping receipt, or a raw JSON dump, this tool intelligently extracts the transactions, automatically categorizes them, and presents them in a clean, spreadsheet-like workspace for further curation.
 
+## ✨ Features
+
+- **Multi-Source Data Ingestion**
+  - **💬 WhatsApp Chat Parser:** Paste raw chat logs containing financial notes.
+  - **🧾 Receipt Scanner:** Upload images of physical receipts (powered by Cloudinary and AI OCR).
+  - **🤖 Manual AI / JSON:** Direct JSON input for fallback when API limits are reached.
+- **AI-Powered Categorization**
+  - Supports multiple AI providers (`gemini-2.5-flash`, `swiftrouter`, etc.).
+  - Automatically translates abbreviations and maps items to customizable categories.
+  - Smart keyword lookup to remember past categorizations.
+- **Workspace & Session Management**
+  - Spreadsheet-like table to view, edit, and filter parsed data.
+  - Advanced filtering by Data Source (Chat, Scan, Manual) and Categories.
+  - Sessions are saved to the database automatically, preventing data loss.
+- **Single-User Security**
+  - Built-in global password authentication to secure the workspace from unauthorized access.
+  - HTTP-only cookie session management.
+
+## 🚀 Tech Stack
+
+- **Framework:** [Next.js 16](https://nextjs.org/) (App Router)
+- **Styling:** Tailwind CSS, shadcn/ui, Lucide Icons
+- **Database:** PostgreSQL (Neon / Local)
+- **ORM:** [Drizzle ORM](https://orm.drizzle.team/)
+- **State Management:** Zustand
+- **Media Upload:** Cloudinary
+
+## 🛠️ Getting Started
+
+### 1. Clone & Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Environment Variables
+Copy `.env.example` to `.env` and fill in the required values:
+```bash
+cp .env.example .env
+```
+Key variables to configure:
+- `DATABASE_URL`: Your PostgreSQL connection string.
+- `APP_PASSWORD`: The password required to log into the app.
+- `AUTH_SECRET`: A random string for securing session cookies.
+- `GEMINI_API_KEY`: API key for Google's Gemini models.
+- `CLOUDINARY_*`: Credentials for receipt image uploads.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Database Setup
+Generate and push the database schema using Drizzle:
+```bash
+npm run db:generate
+npm run db:push
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Run the Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) with your browser. You will be prompted to enter the `APP_PASSWORD` defined in your `.env` file.
 
-## Learn More
+## 📂 Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+- `/src/app`: Next.js App Router pages (Login, Workspace, Settings).
+- `/src/components`: UI Components organized by feature (workspace, settings, ui).
+- `/src/actions`: Next.js Server Actions for secure backend operations (auth, AI parsing, Cloudinary).
+- `/src/db`: Drizzle ORM schema and database client.
+- `/src/features`: Core business logic (categorization taxonomy, audio notifications, validation).
+- `/src/lib/ai`: AI Provider integrations (Gemini, SwiftRouter).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔒 Security Note
+This application is designed as a **single-user personal tool**. The authentication system uses a single global password (`APP_PASSWORD`) to lock the entire application. Do not share this password.
