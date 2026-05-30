@@ -34,7 +34,7 @@ export function SettingsClient({ categories, accounts }: SettingsClientProps) {
 
       <main className="flex-1 overflow-hidden p-6 max-w-6xl mx-auto w-full">
         <Tabs defaultValue="mappings" className="h-full flex flex-col">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3">
             <TabsTrigger value="categories" className="flex items-center gap-2">
               <Tag className="h-4 w-4" />
               Categories

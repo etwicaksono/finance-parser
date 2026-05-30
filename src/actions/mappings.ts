@@ -53,7 +53,7 @@ export async function getAllMappings() {
   }
 }
 
-export async function addMapping(keyword: string, categoryId: string) {
+export async function addMapping(keyword: string, categoryId: string, createdBy: string = "user") {
   if (!keyword || keyword.trim() === "") {
     return { error: "Keyword is required" };
   }
@@ -68,12 +68,15 @@ export async function addMapping(keyword: string, categoryId: string) {
         keyword: keyword.trim().toLowerCase(), 
         categoryId,
         usageCount: 1, 
+        createdBy,
+        updatedBy: createdBy,
       })
       .onConflictDoUpdate({
         target: keywordMappings.keyword,
         set: { 
           categoryId,
           usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = ${categoryId} THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`, 
+          updatedBy: createdBy,
           updatedAt: new Date() 
         }
       })
@@ -90,7 +93,7 @@ export async function addMapping(keyword: string, categoryId: string) {
   }
 }
 
-export async function batchAddMappings(mappings: { keyword: string; categoryId: string }[]) {
+export async function batchAddMappings(mappings: { keyword: string; categoryId: string }[], createdBy: string = "user") {
   const validMappings = mappings.filter((m) => m.keyword && m.keyword.trim() !== "" && m.categoryId);
   if (validMappings.length === 0) return { error: "No valid mappings provided" };
 
@@ -99,6 +102,8 @@ export async function batchAddMappings(mappings: { keyword: string; categoryId: 
       keyword: m.keyword.trim().toLowerCase(),
       categoryId: m.categoryId,
       usageCount: 1,
+      createdBy,
+      updatedBy: createdBy,
     }));
 
     await db
@@ -109,6 +114,7 @@ export async function batchAddMappings(mappings: { keyword: string; categoryId: 
         set: {
           categoryId: sql`EXCLUDED.category_id`,
           usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`,
+          updatedBy: createdBy,
           updatedAt: new Date(),
         },
       });
@@ -149,6 +155,7 @@ export async function updateMapping(id: string, newKeyword: string, newCategoryI
       .set({
         keyword: newKeyword.trim().toLowerCase(),
         categoryId: newCategoryId,
+        updatedBy: "user",
         updatedAt: new Date(),
       })
       .where(eq(keywordMappings.id, id))

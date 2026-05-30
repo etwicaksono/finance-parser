@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 
 interface FloatingEditorProps {
   initialValue: string;
@@ -83,7 +84,7 @@ export function FloatingEditor({
 
   if (!rect) return null;
 
-  return (
+  return document.body ? ReactDOM.createPortal(
     <div
       className="fixed z-50 bg-background border shadow-xl ring-1 ring-primary overflow-hidden"
       style={{
@@ -125,6 +126,7 @@ export function FloatingEditor({
           }
         }}
       />
-    </div>
-  );
+    </div>,
+    document.body
+  ) : null;
 }

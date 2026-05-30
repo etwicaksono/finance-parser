@@ -1,41 +1,19 @@
 "use server";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { AiClassificationResult, CATEGORIZATION_SYSTEM_PROMPT } from "@/features/categorization/taxonomy";
+import { AiClassificationResult } from "@/features/categorization/taxonomy";
+import { getAiProvider } from "@/lib/ai/factory";
 
 /**
- * Classifies a single transaction item using Gemini AI.
+ * Classifies a single transaction item using the configured AI provider.
  *
- * @throws Error if GEMINI_API_KEY is not configured.
+ * @throws Error if provider configuration is missing.
  */
-export async function classifyTransaction(item: string): Promise<AiClassificationResult> {
-  const apiKey = process.env["GEMINI_API_KEY"];
-  if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY is not configured. Please add it to your .env file.\n" +
-      "Get a free key from: https://aistudio.google.com/app/apikey"
-    );
-  }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    systemInstruction: CATEGORIZATION_SYSTEM_PROMPT,
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.1,
-    },
-  });
-
-  const result = await model.generateContent(item);
-  const text = result.response.text();
-
-  try {
-    const parsed = JSON.parse(text) as AiClassificationResult;
-    return parsed;
-  } catch {
-    throw new Error(`AI returned invalid JSON for item "${item}": ${text}`);
-  }
+export async function classifyTransaction(
+  item: string, 
+  aiConfig?: { provider: string; activeModel: string }
+): Promise<AiClassificationResult> {
+  const provider = await getAiProvider(aiConfig);
+  return provider.classifyTransaction(item);
 }
 
 /**
@@ -45,7 +23,8 @@ export async function classifyTransaction(item: string): Promise<AiClassificatio
  * @throws Error if GEMINI_API_KEY is not configured (on first call).
  */
 export async function batchClassifyTransactions(
-  items: string[]
+  items: string[],
+  aiConfig?: { provider: string; activeModel: string }
 ): Promise<Map<string, AiClassificationResult>> {
   const uniqueItems = [...new Set(items.map((i) => i.toLowerCase().trim()))];
   const results = new Map<string, AiClassificationResult>();
@@ -55,7 +34,7 @@ export async function batchClassifyTransactions(
   for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
     const batch = uniqueItems.slice(i, i + BATCH_SIZE);
     const settled = await Promise.allSettled(
-      batch.map((item) => classifyTransaction(item))
+      batch.map((item) => classifyTransaction(item, aiConfig))
     );
     for (let j = 0; j < batch.length; j++) {
       const item = batch[j]!;

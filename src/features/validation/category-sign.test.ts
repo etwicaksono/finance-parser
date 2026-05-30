@@ -23,4 +23,9 @@ describe("getCategorySign", () => {
     expect(getCategorySign("Random Category")).toBe("unknown");
     expect(getCategorySign("")).toBe("unknown");
   });
+
+  it("strips Google Sheets identifiers (::suffix) before resolving", () => {
+    expect(getCategorySign("Gifts::73")).toBe("income"); // Gifts is income in taxonomy
+    expect(getCategorySign("Wage, invoices::123")).toBe("income"); // Wage, invoices is income
+  });
 });

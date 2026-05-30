@@ -19,5 +19,10 @@ export default async function SettingsPage() {
     name: acc.name,
   }));
 
-  return <SettingsClient categories={categories} accounts={accounts} />;
+  return (
+    <SettingsClient 
+      categories={categories} 
+      accounts={accounts} 
+    />
+  );
 }

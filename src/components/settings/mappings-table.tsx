@@ -26,6 +26,7 @@ type Mapping = {
   id: string;
   keyword: string;
   categoryId: string | null;
+  updatedBy: string;
 };
 
 interface MappingsTableProps {
@@ -181,13 +182,14 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                 <th className="px-4 py-2 font-medium w-12 text-center">#</th>
                 <th className="px-4 py-2 font-medium">Keyword</th>
                 <th className="px-4 py-2 font-medium">Category</th>
+                <th className="px-4 py-2 font-medium">Source</th>
                 <th className="px-4 py-2 font-medium text-center w-16">Del</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {mappings.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                     {debouncedSearch ? `No mappings found for "${debouncedSearch}"` : "No mappings found."}
                   </td>
                 </tr>
@@ -219,7 +221,11 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                         onChange={(val) => handleUpdate(mapping.id, mapping.keyword, val)}
                         className="h-7 w-full border-transparent hover:border-input focus:border-input bg-transparent px-2 text-sm"
                       />
-
+                    </td>
+                    <td className="px-4 py-1 text-xs text-muted-foreground">
+                      <span className="truncate max-w-[120px] inline-block" title={mapping.updatedBy}>
+                        {mapping.updatedBy}
+                      </span>
                     </td>
                     <td className="px-4 py-1 text-center">
                       <Button

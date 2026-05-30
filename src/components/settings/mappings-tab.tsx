@@ -16,6 +16,7 @@ type Mapping = {
   id: string;
   keyword: string;
   categoryId: string;
+  updatedBy: string;
   createdAt: Date;
 };
 

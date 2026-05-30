@@ -6,12 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 interface WhatsAppInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
   onParse?: (text: string) => void;
-  onClear?: () => void;
+  onClearInput?: () => void;
+  onClearOutput?: () => void;
 }
 
-export function WhatsAppInput({ onParse, onClear }: WhatsAppInputProps) {
-  const [text, setText] = useState("");
+export function WhatsAppInput({ value, onChange, onParse, onClearInput, onClearOutput }: WhatsAppInputProps) {
+  const [internalText, setInternalText] = useState("");
+  const text = value !== undefined ? value : internalText;
+  
+  const setText = (newText: string) => {
+    setInternalText(newText);
+    if (onChange) onChange(newText);
+  };
 
   const handleParse = () => {
     if (onParse && text) {
@@ -19,29 +28,19 @@ export function WhatsAppInput({ onParse, onClear }: WhatsAppInputProps) {
     }
   };
 
-  const handleClear = () => {
+  const handleClearInput = () => {
     setText("");
-    if (onClear) onClear();
+    if (onClearInput) onClearInput();
   };
 
   return (
     <div className="flex h-full flex-col bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex flex-col gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-2 font-semibold">
           <MessageSquareText className="h-4 w-4 text-primary" />
           <span>WhatsApp Chat</span>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClear}
-            disabled={!text}
-            className="h-8"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Clear
-          </Button>
           <Button
             size="sm"
             onClick={handleParse}
@@ -50,6 +49,25 @@ export function WhatsAppInput({ onParse, onClear }: WhatsAppInputProps) {
           >
             <Play className="mr-2 h-3.5 w-3.5" />
             Parse
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearInput}
+            disabled={!text}
+            className="h-8 text-xs px-2.5"
+            title="Hapus teks chat"
+          >
+            Clear Input
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClearOutput}
+            className="h-8 text-xs px-2.5 text-destructive hover:text-destructive border-destructive/20"
+            title="Hapus baris tabel dari sumber chat"
+          >
+            Clear Output
           </Button>
         </div>
       </div>

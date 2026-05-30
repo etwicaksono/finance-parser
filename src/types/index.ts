@@ -31,6 +31,16 @@ export interface TransactionRow {
   // AI Categorization State (runtime only — not persisted to DB)
   aiType?: "income" | "expense";
   aiConfidence?: number;
+  // Tracking original rows when grouped
+  rawItemIds?: string[];
+  // Data Source Tracking
+  source?: "chat" | "scan" | "manual";
+}
+
+export interface SessionMetadata {
+  whatsappText?: string;
+  manualText?: string;
+  translateNames?: boolean;
 }
 
 export interface ParserResult {

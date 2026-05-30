@@ -76,6 +76,7 @@ export interface AiClassificationResult {
   category: string;
   confidence: number;
   reasoning: string;
+  normalized_item_name: string;
 }
 
 export const CATEGORIZATION_SYSTEM_PROMPT = `You are a financial transaction categorization assistant.
@@ -96,7 +97,10 @@ IMPORTANT RULES:
    - "Others" for uncertain but valid transactions
    - "Missing" for impossible-to-classify transactions
 10. Return confidence score from 0-100.
-11. Consider local Indonesian context:
+11. Normalize the transaction item name by removing quantities, units, and dimensions (e.g. "1,5 m", "2 slop", "3 kg", "2x"). Return only the core item name as "normalized_item_name".
+    - Example: "1,5 m perlak kasur" -> "perlak kasur"
+    - Example: "2 slop yakult" -> "yakult"
+12. Consider local Indonesian context:
    - warung, cilok, terang bulan, pulsa, galon, kos, ojol, e-wallet, etc.
 12. If transaction clearly belongs to hobbies like fishing, gaming, collections, use "Hobbies"
 13. Food purchased for cooking at home: "Groceries, main meal"
@@ -206,10 +210,11 @@ Return JSON only. No markdown, no explanation outside JSON.
 
 Example output:
 {
-  "transaction": "Semangka",
+  "transaction": "2 porsi Semangka",
   "type": "expense",
   "parent_category": "Food & Drinks",
   "category": "Groceries, main meal",
   "confidence": 96,
-  "reasoning": "Fruit purchased for home consumption is categorized as groceries."
+  "reasoning": "Fruit purchased for home consumption is categorized as groceries.",
+  "normalized_item_name": "Semangka"
 }`;

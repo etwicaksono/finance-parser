@@ -7,7 +7,13 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { Copy, AlertTriangle, Plus, Trash2, Check, Trash } from "lucide-react";
+
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 import {
   Table,
@@ -18,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getCategorySign } from "@/features/validation/category-sign";
 import { CategoryOption, AccountOption, TransactionRow } from "@/types";
@@ -29,9 +36,13 @@ interface SpreadsheetTableProps {
   data: TransactionRow[];
   categories: CategoryOption[];
   accounts: AccountOption[];
+  viewMode?: "raw" | "grouped";
   onDataChange?: (data: TransactionRow[]) => void;
+  onEditGroupedItems?: (row: TransactionRow) => void;
   onCategoryChange?: (rowId: string, itemString: string, newCategoryId: string) => void;
   onCopyRows?: (rows: TransactionRow[]) => void;
+  onResolveDuplicate?: (rowIndex: number, action: "keep" | "remove") => void;
+  emptyMessage?: string;
 }
 
 interface CellPos {
@@ -41,11 +52,13 @@ interface CellPos {
 
 const RECENT_ACCOUNTS: string[] = [];
 
-export function SpreadsheetTable({ data, categories, accounts, onDataChange, onCategoryChange, onCopyRows }: SpreadsheetTableProps) {
+export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw", onDataChange, onEditGroupedItems, onCategoryChange, onCopyRows, onResolveDuplicate, emptyMessage = "No data available." }: SpreadsheetTableProps) {
+  const tableId = React.useId().replace(/:/g, "");
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
   const [rowSelection, setRowSelection] = React.useState({});
+  const [includeHeader, setIncludeHeader] = React.useState(true);
 
   const insertRowBelow = React.useCallback((index: number) => {
     setTableData(prev => {
@@ -148,28 +161,11 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
         cell: (info) => info.getValue(),
       },
       {
-        accessorKey: "item",
-        header: "Item",
+        accessorKey: "accountId",
+        header: "Account",
         cell: (info) => {
-          const isDup = info.row.original.isDuplicate;
-          return (
-            <div className="flex items-center gap-2">
-              <span>{info.getValue() as string}</span>
-              {isDup && (
-                <span title="Possible duplicate detected">
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
-                </span>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "amount",
-        header: "Amount",
-        cell: (info) => {
-          const val = info.getValue() as number | null;
-          return val !== null ? val.toLocaleString("id-ID") : "";
+          const val = info.getValue() as string;
+          return accounts.find((a) => a.id === val)?.name || "-";
         },
       },
       {
@@ -182,11 +178,62 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
         },
       },
       {
-        accessorKey: "accountId",
-        header: "Account",
+        accessorKey: "amount",
+        header: "Amount",
         cell: (info) => {
-          const val = info.getValue() as string;
-          return accounts.find((a) => a.id === val)?.name || "-";
+          const val = info.getValue() as number | null;
+          return val !== null ? val.toLocaleString("id-ID") : "";
+        },
+      },
+      {
+        accessorKey: "item",
+        header: "Item",
+        cell: (info) => {
+          const row = info.row.original;
+          const isDup = row.isDuplicate;
+          return (
+            <div className="flex items-center gap-2">
+              <span className={viewMode === "grouped" ? "text-blue-600 hover:underline cursor-pointer" : ""} onClick={() => {
+                if (viewMode === "grouped" && onEditGroupedItems) {
+                  onEditGroupedItems(row);
+                }
+              }}>
+                {info.getValue() as string}
+              </span>
+              {isDup && (
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <button className="flex items-center justify-center p-1 rounded hover:bg-muted transition-colors text-destructive" title="Resolve possible duplicate">
+                        <AlertTriangle className="h-4 w-4" />
+                      </button>
+                    }
+                  />
+                  <PopoverContent className="w-56 p-2" align="start">
+                    <div className="flex flex-col space-y-2">
+                      <span className="text-sm font-medium px-2 py-1">Handle Duplicate</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="justify-start w-full text-green-600 hover:text-green-700 hover:bg-green-50"
+                        onClick={() => onResolveDuplicate?.(info.row.index, "keep")}
+                      >
+                        <Check className="h-4 w-4 mr-2" /> Keep as Multiple
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="justify-start w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => onResolveDuplicate?.(info.row.index, "remove")}
+                      >
+                        <Trash className="h-4 w-4 mr-2" /> Remove Item
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+          );
         },
       },
       {
@@ -234,12 +281,42 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
     state: { rowSelection },
   });
 
+  // Calculate sum for selected numeric cells (Google Sheets style)
+  const selectionStats = React.useMemo(() => {
+    if (!selectionRange) return null;
+    const { minRow, maxRow, minCol, maxCol } = selectionRange;
+    
+    let sum = 0;
+    let count = 0;
+    for (let r = minRow; r <= maxRow; r++) {
+      for (let c = minCol; c <= maxCol; c++) {
+         const colDef = columns[c];
+         const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+         if (key === "amount") {
+            const val = tableData[r]?.amount;
+            if (typeof val === 'number') {
+              sum += val;
+              count++;
+            }
+         }
+      }
+    }
+    
+    if (count <= 1) return null;
+    return { sum, count };
+  }, [selectionRange, tableData, columns]);
+
   // Copy selection range as TSV
   const copySelectionToClipboard = React.useCallback(() => {
     if (!selectionRange) return;
 
     const rows = table.getRowModel().rows;
-    const sanitize = (s: string) => s.replace(/[\t\n\r]/g, " ");
+    const sanitize = (s: string) => {
+      if (s.includes("\n") || s.includes("\r") || s.includes("\t") || s.includes('"')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
 
     const tsv: string[] = [];
     const copiedOriginals: TransactionRow[] = [];
@@ -251,6 +328,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
       for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
         const colDef = columns[c];
         const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+        if (key === "notes") continue;
         if (!key) {
           rowValues.push("");
           continue;
@@ -276,22 +354,26 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
     const rowsToCopy = selectedRows.length > 0 ? selectedRows : table.getRowModel().rows;
     if (rowsToCopy.length === 0) return;
 
-    const headers = ["Date", "Item", "Amount", "Category", "Account", "Notes"];
-    const sanitize = (s: string) => s.replace(/[\t\n\r]/g, " ");
+    const headers = ["Date", "Account", "Category", "Amount", "Item"];
+    const sanitize = (s: string) => {
+      if (s.includes("\n") || s.includes("\r") || s.includes("\t") || s.includes('"')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
 
     const tsvData = rowsToCopy.map((row) => {
       const t = row.original;
       return [
         sanitize(t.date || ""),
-        sanitize(t.item || ""),
-        t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
-        sanitize(categories.find((c) => c.id === t.categoryId)?.name || ""),
         sanitize(accounts.find((a) => a.id === t.accountId)?.name || ""),
-        sanitize(t.notes || ""),
+        sanitize(categories.find((c) => c.id === t.categoryId)?.name || ""),
+        t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
+        sanitize(t.item || ""),
       ].join("\t");
     });
 
-    const finalTsv = [headers.join("\t"), ...tsvData].join("\n");
+    const finalTsv = includeHeader ? [headers.join("\t"), ...tsvData].join("\n") : tsvData.join("\n");
     navigator.clipboard.writeText(finalTsv).then(() => {
       setCopyFlash(true);
       setTimeout(() => setCopyFlash(false), 600);
@@ -314,16 +396,26 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
       if (!colDef || !("accessorKey" in colDef)) return;
       const key = (colDef as any).accessorKey;
       if (!["date", "item", "amount", "notes", "categoryId", "accountId"].includes(key)) return;
+
+      const row = tableData[rowIndex];
+      if (!row) return;
+
+      if (viewMode === "grouped" && key === "item") {
+        if (onEditGroupedItems) {
+          onEditGroupedItems(row);
+        }
+        return;
+      }
+
       setEditingCell({ rowIndex, colIndex });
       if (initialValue !== undefined) {
         setEditValue(initialValue);
       } else {
-        const row = tableData[rowIndex];
-        const val = (row as any)[key];
+        const val = row[key as keyof TransactionRow];
         setEditValue(val !== null && val !== undefined ? String(val) : "");
       }
     },
-    [columns, tableData]
+    [columns, tableData, viewMode, onEditGroupedItems]
   );
 
   const saveEdit = React.useCallback(
@@ -519,6 +611,19 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
               Copy Selection
             </Button>
           )}
+          <div className="flex items-center space-x-2 mr-2">
+            <Checkbox
+              id="include-header"
+              checked={includeHeader}
+              onCheckedChange={(checked) => setIncludeHeader(checked as boolean)}
+            />
+            <label
+              htmlFor="include-header"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground"
+            >
+              Include header
+            </label>
+          </div>
           <Button size="sm" variant="outline" onClick={handleCopyRows} disabled={tableData.length === 0}
             className={copyFlash && (!selectionRange || isAnySingleCellSelected) ? "bg-green-600/10 border-green-600 text-green-600" : ""}
           >
@@ -570,7 +675,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
                     return (
                       <TableCell
                         key={cell.id}
-                        id={`cell-${rowIndex}-${colIndex}`}
+                        id={`cell-${tableId}-${rowIndex}-${colIndex}`}
                         className={[
                           "relative border-r border-border p-0 transition-colors",
                           isEditing ? "ring-1 ring-primary ring-inset z-10" : "",
@@ -626,9 +731,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
                                 el.focus();
                                 try {
                                   el.showPicker();
-                                } catch (err) {
-                                  // Ignore error if showPicker is not supported or lacks user gesture
-                                }
+                                } catch (err) {}
                               }
                             }}
                             className="h-full w-full bg-transparent px-2 py-2 outline-none"
@@ -658,7 +761,7 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
                             {isEditing && (
                               <FloatingEditor
                                 initialValue={editValue}
-                                targetCellId={`cell-${rowIndex}-${colIndex}`}
+                                targetCellId={`cell-${tableId}-${rowIndex}-${colIndex}`}
                                 onSave={(val) => saveEdit(rowIndex, colIndex, val)}
                                 onCancel={() => {
                                   setEditingCell(null);
@@ -680,14 +783,22 @@ export function SpreadsheetTable({ data, categories, accounts, onDataChange, onC
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No data. Paste WhatsApp chat to begin.
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  {emptyMessage}
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Floating Status Bar (like Google Sheets) */}
+      {selectionStats && (
+        <div className="absolute bottom-6 right-6 bg-primary text-primary-foreground text-sm px-4 py-2 rounded-full shadow-lg font-medium flex gap-3 items-center z-50 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
+          <span>Sum: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(selectionStats.sum)}</span>
+          <span className="text-primary-foreground/70 text-xs">({selectionStats.count} cells)</span>
+        </div>
+      )}
     </div>
   );
 }

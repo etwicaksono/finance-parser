@@ -7,6 +7,8 @@ export const keywordMappings = pgTable("keyword_mappings", {
   categoryId: varchar("category_id", { length: 36 })
     .references(() => categories.id, { onDelete: "cascade" }),
   usageCount: integer("usage_count").default(0).notNull(),
+  createdBy: text("created_by").default("user").notNull(),
+  updatedBy: text("updated_by").default("user").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

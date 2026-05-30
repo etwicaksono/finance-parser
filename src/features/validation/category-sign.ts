@@ -3,7 +3,13 @@ import taxonomyData from "../../data/category-taxonomy.json";
 export type CategorySign = "income" | "expense" | "both" | "unknown";
 
 export function getCategorySign(categoryName: string): CategorySign {
-  const name = categoryName.trim().toLowerCase();
+  let name = categoryName.trim().toLowerCase();
+  
+  // Strip suffix like "::73" used as identifier in Google Sheets
+  const suffixIndex = name.indexOf("::");
+  if (suffixIndex !== -1) {
+    name = name.substring(0, suffixIndex).trim();
+  }
 
   // 1. Check Income
   const incomeCategories = taxonomyData.income;
