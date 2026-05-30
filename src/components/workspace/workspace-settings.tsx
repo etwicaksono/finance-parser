@@ -1,17 +1,26 @@
 import * as React from "react";
-import { Settings, Volume2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, Settings, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useWorkspaceSettings } from "@/hooks/useWorkspaceSettings";
 import { playNotification, SoundTone } from "@/features/audio/notification-sounds";
+import { logout } from "@/actions/auth";
 
 export function WorkspaceSettingsDropdown() {
   const { settings, updateSettings, isLoaded } = useWorkspaceSettings();
+  const router = useRouter();
 
   if (!isLoaded) return null;
 
   const handleTestSound = (tone: SoundTone) => {
     playNotification(tone);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/login");
+    router.refresh();
   };
 
   return (
@@ -64,6 +73,17 @@ export function WorkspaceSettingsDropdown() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="pt-4 border-t">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={handleLogout}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Keluar Sesi
+            </Button>
           </div>
 
         </div>
