@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getMappings, addMapping, deleteMapping, updateMapping } from "@/actions/mappings";
+import { getMappings, addMapping, deleteMapping, updateMapping, cleanupMappings } from "@/actions/mappings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, Plus, Loader2, ChevronLeft, ChevronRight, Search, Check, ChevronsUpDown } from "lucide-react";
+import { Trash2, Plus, Loader2, ChevronLeft, ChevronRight, Search, Check, ChevronsUpDown, Sparkles, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Command,
@@ -21,11 +21,17 @@ import {
 } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { CategoryOption } from "@/types";
+import Swal from 'sweetalert2';
+import withReactContent from 'sweetalert2-react-content';
+
+const MySwal = withReactContent(Swal);
 
 type Mapping = {
   id: string;
   keyword: string;
   categoryId: string | null;
+  usageCount: number;
+  updatedAt: Date | string | null;
   updatedBy: string;
 };
 
@@ -42,9 +48,14 @@ export function MappingsTable({ categories }: MappingsTableProps) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"keyword" | "usageCount" | "updatedAt">("updatedAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
   const [newKeyword, setNewKeyword] = useState("");
   const [newCategoryId, setNewCategoryId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,7 +71,13 @@ export function MappingsTable({ categories }: MappingsTableProps) {
 
   const fetchMappings = useCallback(async () => {
     setIsLoading(true);
-    const result = await getMappings({ page, search: debouncedSearch });
+    const result = await getMappings({ 
+      page, 
+      search: debouncedSearch,
+      categoryId: filterCategory,
+      sortBy,
+      sortOrder
+    });
     if (result.error) {
       toast.error(result.error);
     } else {
@@ -69,7 +86,12 @@ export function MappingsTable({ categories }: MappingsTableProps) {
       setPageSize(result.pageSize ?? 50);
     }
     setIsLoading(false);
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, filterCategory, sortBy, sortOrder]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterCategory, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchMappings();
@@ -95,7 +117,23 @@ export function MappingsTable({ categories }: MappingsTableProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this mapping?")) return;
+    const resultAlert = await MySwal.fire({
+      title: 'Hapus Mapping?',
+      text: "Anda yakin ingin menghapus mapping ini?",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: 'var(--destructive)',
+      cancelButtonColor: 'var(--muted-foreground)',
+      confirmButtonText: 'Ya, Hapus!',
+      cancelButtonText: 'Batal',
+      background: 'var(--background)',
+      color: 'var(--foreground)',
+      customClass: {
+        popup: 'border border-border rounded-lg',
+      }
+    });
+
+    if (!resultAlert.isConfirmed) return;
 
     const previous = [...mappings];
     setMappings((prev) => prev.filter((m) => m.id !== id));
@@ -124,6 +162,50 @@ export function MappingsTable({ categories }: MappingsTableProps) {
     } else {
       toast.success("Mapping updated");
     }
+  };
+
+  const handleCleanup = async () => {
+    const resultAlert = await MySwal.fire({
+      title: 'Clean Up Mappings?',
+      text: 'Proses ini akan membersihkan semua keyword dan menggabungkan duplikat secara permanen. Lanjutkan?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: 'var(--primary)',
+      cancelButtonColor: 'var(--muted-foreground)',
+      confirmButtonText: 'Ya, Bersihkan!',
+      cancelButtonText: 'Batal',
+      background: 'var(--background)',
+      color: 'var(--foreground)',
+      customClass: {
+        popup: 'border border-border rounded-lg',
+      }
+    });
+
+    if (!resultAlert.isConfirmed) return;
+
+    setIsCleaning(true);
+    const result = await cleanupMappings();
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success(`Cleaned up ${result.count} mappings. Removed ${result.deleted} duplicates.`);
+      fetchMappings();
+    }
+    setIsCleaning(false);
+  };
+
+  const handleSort = (column: "keyword" | "usageCount" | "updatedAt") => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(column);
+      setSortOrder(column === "keyword" ? "asc" : "desc");
+    }
+  };
+
+  const renderSortIcon = (column: "keyword" | "usageCount" | "updatedAt") => {
+    if (sortBy !== column) return <ArrowUpDown className="ml-1 h-3 w-3 inline text-muted-foreground/50" />;
+    return sortOrder === "asc" ? <ArrowUp className="ml-1 h-3 w-3 inline" /> : <ArrowDown className="ml-1 h-3 w-3 inline" />;
   };
 
   return (
@@ -161,9 +243,25 @@ export function MappingsTable({ categories }: MappingsTableProps) {
             placeholder="Search keyword..."
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            className="pl-8 h-8 text-sm w-full"
           />
         </div>
+        <CategoryCombobox
+          categories={[{ id: "all", name: "All Categories" }, ...categories]}
+          value={filterCategory}
+          onChange={(val) => setFilterCategory(val)}
+          className="h-8 w-[160px] bg-background"
+        />
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="h-8" 
+          onClick={handleCleanup}
+          disabled={isCleaning}
+        >
+          {isCleaning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-blue-500" />}
+          Clean Up Mappings
+        </Button>
         <span className="text-xs text-muted-foreground ml-auto">
           {isLoading ? "Loading..." : `${total.toLocaleString()} mappings`}
         </span>
@@ -180,16 +278,23 @@ export function MappingsTable({ categories }: MappingsTableProps) {
             <thead className="text-xs text-muted-foreground uppercase bg-muted sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-2 font-medium w-12 text-center">#</th>
-                <th className="px-4 py-2 font-medium">Keyword</th>
+                <th className="px-4 py-2 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none" onClick={() => handleSort("keyword")}>
+                  Keyword {renderSortIcon("keyword")}
+                </th>
                 <th className="px-4 py-2 font-medium">Category</th>
-                <th className="px-4 py-2 font-medium">Source</th>
+                <th className="px-4 py-2 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none w-20 text-center" onClick={() => handleSort("usageCount")}>
+                  Usage {renderSortIcon("usageCount")}
+                </th>
+                <th className="px-4 py-2 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none w-24" onClick={() => handleSort("updatedAt")}>
+                  Last Updated {renderSortIcon("updatedAt")}
+                </th>
                 <th className="px-4 py-2 font-medium text-center w-16">Del</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {mappings.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     {debouncedSearch ? `No mappings found for "${debouncedSearch}"` : "No mappings found."}
                   </td>
                 </tr>
@@ -222,10 +327,20 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                         className="h-7 w-full border-transparent hover:border-input focus:border-input bg-transparent px-2 text-sm"
                       />
                     </td>
-                    <td className="px-4 py-1 text-xs text-muted-foreground">
-                      <span className="truncate max-w-[120px] inline-block" title={mapping.updatedBy}>
-                        {mapping.updatedBy}
+                    <td className="px-4 py-1 text-center text-muted-foreground">
+                      <span className="inline-flex items-center justify-center bg-muted px-2 py-0.5 rounded text-xs">
+                        {mapping.usageCount}
                       </span>
+                    </td>
+                    <td className="px-4 py-1 text-xs text-muted-foreground">
+                      <div className="flex flex-col">
+                        <span className="truncate max-w-[100px]">{mapping.updatedBy}</span>
+                        {mapping.updatedAt && (
+                          <span className="text-[10px] opacity-70">
+                            {new Date(mapping.updatedAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-1 text-center">
                       <Button

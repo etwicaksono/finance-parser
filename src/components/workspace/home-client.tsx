@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
 import { addMapping, batchAddMappings } from "@/actions/mappings";
+import { cleanKeyword } from "@/lib/keyword-utils";
 import * as React from "react";
 import { ReceiptScanInput } from "@/components/workspace/receipt-scan-input";
 import { GroupedItemsModal } from "./grouped-items-modal";
@@ -111,13 +112,7 @@ export function HomeClient({
     return () => clearTimeout(timer);
   }, [rawTransactions, sessionImages, sessionMetadata, currentSessionId]);
 
-  const cleanKeyword = (item: string) => {
-    let base = (item.split("=>")[0] || "").split("=")[0]?.trim() || "";
-    // Strip leading quantities like "2 ", "500gr ", "1.5 kg"
-    const quantityRegex = /^\s*\d+(?:[\.,]\d+)?\s*(?:kg|g|gr|gram|ml|liter|l|pcs|buah|biji|slop|pack|ikat|besek|box|porsi|botol|kaleng|cup|bungkus|bks|lembar|lbr)?\s+/i;
-    base = base.replace(quantityRegex, "").trim();
-    return base;
-  };
+
 
   const processRawRows = async (rawRows: TransactionRow[]) => {
     setProcessingText("Mapping local data...");
@@ -389,10 +384,7 @@ export function HomeClient({
   };
 
   const handleCategoryChange = (rowId: string, itemString: string, newCategoryId: string) => {
-    const rawItems = itemString.split("\n").map(s => {
-      const match = s.split("=>");
-      return match[0]?.trim() || "";
-    }).filter(Boolean);
+    const rawItems = itemString.split("\n").map(s => cleanKeyword(s)).filter(Boolean);
 
     for (const rawItem of rawItems) {
       if (rawItem) {
