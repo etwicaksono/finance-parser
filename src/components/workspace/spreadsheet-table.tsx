@@ -93,10 +93,85 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
   const [selectionFocus, setSelectionFocus] = React.useState<CellPos | null>(null);
   const [copyFlash, setCopyFlash] = React.useState(false);
   const isDragging = React.useRef(false);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const autoScrollInterval = React.useRef<NodeJS.Timeout | null>(null);
 
   React.useEffect(() => {
     setTableData(data);
   }, [data]);
+
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) {
+        if (autoScrollInterval.current) {
+          clearInterval(autoScrollInterval.current);
+          autoScrollInterval.current = null;
+        }
+        return;
+      }
+
+      const container = scrollContainerRef.current?.querySelector(".table-scroll-container");
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const y = e.clientY;
+      const threshold = 50; // pixels from edge to start scrolling
+      let scrollSpeed = 0;
+
+      if (y < rect.top + threshold) {
+        scrollSpeed = -15; // scroll up
+      } else if (y > rect.bottom - threshold) {
+        scrollSpeed = 15; // scroll down
+      }
+
+      if (scrollSpeed !== 0) {
+        if (!autoScrollInterval.current) {
+          autoScrollInterval.current = setInterval(() => {
+            if (!isDragging.current) {
+              if (autoScrollInterval.current) clearInterval(autoScrollInterval.current);
+              autoScrollInterval.current = null;
+              return;
+            }
+            container.scrollBy(0, scrollSpeed);
+
+            // Find cell under cursor to update selection
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            if (el) {
+              const cell = el.closest("td");
+              if (cell) {
+                const rIdx = parseInt(cell.getAttribute("data-row-index") || "-1");
+                const cIdx = parseInt(cell.getAttribute("data-col-index") || "-1");
+                if (rIdx >= 0 && cIdx >= 0) {
+                  setSelectionFocus({ rowIndex: rIdx, colIndex: cIdx });
+                }
+              }
+            }
+          }, 20);
+        }
+      } else {
+        if (autoScrollInterval.current) {
+          clearInterval(autoScrollInterval.current);
+          autoScrollInterval.current = null;
+        }
+      }
+    };
+
+    const stopDrag = () => {
+      isDragging.current = false;
+      if (autoScrollInterval.current) {
+        clearInterval(autoScrollInterval.current);
+        autoScrollInterval.current = null;
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopDrag);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopDrag);
+      if (autoScrollInterval.current) clearInterval(autoScrollInterval.current);
+    };
+  }, []);
 
   // Compute selection rectangle
   const selectionRange = React.useMemo(() => {
@@ -381,7 +456,7 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
         onCopyRows(rowsToCopy.map((r) => r.original));
       }
     });
-  }, [table, categories, accounts, onCopyRows]);
+  }, [table, categories, accounts, onCopyRows, includeHeader]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
     setTimeout(() => {
@@ -498,11 +573,7 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
     setSelectionFocus({ rowIndex, colIndex });
   };
 
-  React.useEffect(() => {
-    const stopDrag = () => { isDragging.current = false; };
-    window.addEventListener("mouseup", stopDrag);
-    return () => window.removeEventListener("mouseup", stopDrag);
-  }, []);
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
@@ -632,8 +703,8 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
           </Button>
         </div>
       </div>
-      <div className="flex-1 min-h-0 relative" onMouseLeave={() => { isDragging.current = false; }}>
-        <Table className="border-collapse" containerClassName="absolute inset-0 overflow-auto pb-32">
+      <div className="flex-1 min-h-0 relative" ref={scrollContainerRef}>
+        <Table className="border-collapse" containerClassName="absolute inset-0 overflow-auto pb-32 table-scroll-container">
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

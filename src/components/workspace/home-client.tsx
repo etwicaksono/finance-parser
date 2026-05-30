@@ -299,7 +299,37 @@ export function HomeClient({
 
   const handleDataChange = (newData: TransactionRow[]) => {
     if (viewMode === "raw") {
-      setRawTransactions(newData);
+      setRawTransactions(prev => {
+        // Find what was currently displayed before this change
+        let currentVisible = prev;
+        if (sourceFilter !== "all") {
+          currentVisible = currentVisible.filter(r => r.source === sourceFilter);
+        }
+        currentVisible = currentVisible.filter(r => categoryFilter.includes(r.categoryId ?? "unmapped"));
+        
+        const currentVisibleIds = new Set(currentVisible.map(r => r.id));
+        const newIds = new Set(newData.map(r => r.id));
+        
+        // Find deleted rows
+        const deletedIds = new Set<string>();
+        for (const id of currentVisibleIds) {
+          if (!newIds.has(id)) deletedIds.add(id);
+        }
+        
+        const newDataMap = new Map(newData.map(r => [r.id, r]));
+        
+        // 1. Remove deleted rows
+        let updatedRaw = prev.filter(r => !deletedIds.has(r.id));
+        
+        // 2. Update existing rows
+        updatedRaw = updatedRaw.map(r => newDataMap.has(r.id) ? newDataMap.get(r.id)! : r);
+        
+        // 3. Append newly inserted rows
+        const existingIds = new Set(updatedRaw.map(r => r.id));
+        const newItems = newData.filter(r => !existingIds.has(r.id));
+        
+        return [...updatedRaw, ...newItems];
+      });
     } else {
       const currentDisplay = computeGroupedTransactions(rawTransactions, groupAmountOverrides);
       let updatedRaw = [...rawTransactions];
