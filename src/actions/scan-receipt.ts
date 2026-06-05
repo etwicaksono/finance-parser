@@ -4,7 +4,7 @@ import { TransactionRow } from "@/types";
 import { getAiProvider } from "@/lib/ai/factory";
 
 export type ScanReceiptResponse = 
-  | { success: true; data: TransactionRow[] }
+  | { success: true; data: TransactionRow[]; parsedIds: string[] }
   | { success: false; error: string };
 
 /**
@@ -14,11 +14,11 @@ export type ScanReceiptResponse =
  * @returns Object indicating success/failure and data/error
  */
 export async function scanReceiptImages(
-  images: { base64: string; mimeType: string }[],
+  images: { id?: string; name?: string; base64: string; mimeType: string }[],
   translateNames: boolean = false,
   aiConfig?: { provider: string; activeModel: string }
 ): Promise<ScanReceiptResponse> {
-  if (images.length === 0) return { success: true, data: [] };
+  if (images.length === 0) return { success: true, data: [], parsedIds: [] };
 
   const provider = await getAiProvider(aiConfig);
 
@@ -33,16 +33,27 @@ export async function scanReceiptImages(
   const today = new Date().toISOString().slice(0, 10);
   const allRows: TransactionRow[] = [];
   const errors: string[] = [];
+  const parsedIds: string[] = [];
 
-  for (const settled of resultsPerImage) {
+  for (let i = 0; i < resultsPerImage.length; i++) {
+    const settled = resultsPerImage[i];
+    const sourceImage = images[i];
+
+    if (!settled || !sourceImage) continue;
+
     if (settled.status === "rejected") {
-      console.error("Failed to scan a receipt image:", settled.reason);
+      console.error(`Failed to scan receipt image ${sourceImage.name || i}:`, settled.reason);
       errors.push(settled.reason?.message || String(settled.reason));
       continue;
     }
+    
+    if (sourceImage.id) {
+      parsedIds.push(sourceImage.id);
+    }
+
     const items = settled.value;
     for (const item of items) {
-      allRows.push({
+      const row: TransactionRow = {
         id: crypto.randomUUID(),
         date: item.date ?? today,
         item: item.item,
@@ -50,7 +61,14 @@ export async function scanReceiptImages(
         categoryId: null,
         accountId: null,
         notes: "",
-      });
+        source: "scan",
+      };
+      
+      if (sourceImage.name) {
+        row.receiptName = sourceImage.name;
+      }
+      
+      allRows.push(row);
     }
   }
 
@@ -58,5 +76,5 @@ export async function scanReceiptImages(
     return { success: false, error: `Gagal membaca nota: ${errors[0]}` };
   }
 
-  return { success: true, data: allRows };
+  return { success: true, data: allRows, parsedIds };
 }

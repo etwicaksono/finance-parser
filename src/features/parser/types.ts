@@ -8,6 +8,7 @@ export interface ParsedTransaction {
   amount: number;
   date?: string | undefined;
   sender?: string | undefined;
+  isDateAmbiguous?: boolean;
 }
 
 export interface ParseResult {

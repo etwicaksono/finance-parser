@@ -15,7 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { TransactionRow } from "@/types";
+import { TransactionRow, SessionImage } from "@/types";
 import { getSessions, createSession, updateSession, deleteSession } from "@/actions/sessions";
 import { toast } from "sonner";
 
@@ -28,7 +28,7 @@ export interface SessionData {
 
 interface SessionSwitcherProps {
   currentSessionId: string | null;
-  onSessionChange: (sessionId: string, data: TransactionRow[], images?: string[], metadata?: any) => void;
+  onSessionChange: (sessionId: string, data: TransactionRow[], images?: SessionImage[], metadata?: any) => void;
   onNewSession: () => void;
   rawTransactions: TransactionRow[];
 }
@@ -59,7 +59,7 @@ export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSessio
       const { getSessionById } = await import("@/actions/sessions");
       const session = await getSessionById(id);
       if (session) {
-        onSessionChange(session.id, (session.data as TransactionRow[]) || [], (session.images as string[]) || [], session.metadata);
+        onSessionChange(session.id, (session.data as TransactionRow[]) || [], (session.images as SessionImage[]) || [], session.metadata);
       }
     } catch (error) {
       console.error(error);

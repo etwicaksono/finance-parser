@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings2, Tag, Wallet, BookA, ArrowLeft } from "lucide-react";
+import { Settings2, Tag, Wallet, BookA, ArrowLeft, Key } from "lucide-react";
 import { CategoriesTab } from "./categories-tab";
 import { AccountsTab } from "./accounts-tab";
 import { MappingsTable } from "./mappings-table";
+import { ContraKeywordsTab } from "./contra-keywords-tab";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { CategoryOption, AccountOption } from "@/types";
@@ -34,7 +35,7 @@ export function SettingsClient({ categories, accounts }: SettingsClientProps) {
 
       <main className="flex-1 overflow-hidden p-6 max-w-6xl mx-auto w-full">
         <Tabs defaultValue="mappings" className="h-full flex flex-col">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="categories" className="flex items-center gap-2">
               <Tag className="h-4 w-4" />
               Categories
@@ -46,6 +47,10 @@ export function SettingsClient({ categories, accounts }: SettingsClientProps) {
             <TabsTrigger value="mappings" className="flex items-center gap-2">
               <BookA className="h-4 w-4" />
               Mappings
+            </TabsTrigger>
+            <TabsTrigger value="contra" className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              Contra
             </TabsTrigger>
           </TabsList>
 
@@ -60,6 +65,10 @@ export function SettingsClient({ categories, accounts }: SettingsClientProps) {
 
             <TabsContent value="mappings" className="h-full mt-0 flex flex-col">
               <MappingsTable categories={categories} />
+            </TabsContent>
+
+            <TabsContent value="contra" className="h-full mt-0 overflow-y-auto p-4">
+              <ContraKeywordsTab />
             </TabsContent>
           </div>
         </Tabs>

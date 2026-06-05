@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getMappings, addMapping, deleteMapping, updateMapping, cleanupMappings } from "@/actions/mappings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, Plus, Loader2, ChevronLeft, ChevronRight, Search, Check, ChevronsUpDown, Sparkles, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Trash2, Plus, Loader2, ChevronLeft, ChevronRight, Search, Check, ChevronsUpDown, Sparkles, ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Command,
@@ -19,6 +19,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { CategoryOption } from "@/types";
 import Swal from 'sweetalert2';
@@ -32,6 +40,7 @@ type Mapping = {
   categoryId: string | null;
   usageCount: number;
   updatedAt: Date | string | null;
+  createdBy: string;
   updatedBy: string;
 };
 
@@ -54,6 +63,7 @@ export function MappingsTable({ categories }: MappingsTableProps) {
 
   const [newKeyword, setNewKeyword] = useState("");
   const [newCategoryId, setNewCategoryId] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
 
@@ -99,8 +109,8 @@ export function MappingsTable({ categories }: MappingsTableProps) {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAdd = async (e?: React.FormEvent, closeModal: boolean = true) => {
+    if (e) e.preventDefault();
     if (!newKeyword.trim() || !newCategoryId) return;
 
     setIsSubmitting(true);
@@ -110,8 +120,11 @@ export function MappingsTable({ categories }: MappingsTableProps) {
     } else {
       toast.success("Mapping added");
       setNewKeyword("");
-      setNewCategoryId("");
+      // not clearing categoryId makes it easier to add multiple keywords to the same category
       fetchMappings();
+      if (closeModal) {
+        setIsAddModalOpen(false);
+      }
     }
     setIsSubmitting(false);
   };
@@ -210,30 +223,59 @@ export function MappingsTable({ categories }: MappingsTableProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Add form */}
-      <div className="p-4 border-b bg-muted/20 shrink-0">
-        <h3 className="font-semibold mb-2 text-sm">Add New Mapping</h3>
-        <form onSubmit={handleAdd} className="flex gap-2">
-          <Input
-            placeholder="Keyword..."
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            disabled={isSubmitting}
-            className="flex-1 bg-background h-9"
-          />
-          <CategoryCombobox
-            categories={categories}
-            value={newCategoryId}
-            onChange={setNewCategoryId}
-            disabled={isSubmitting}
-            className="flex-1 h-9 bg-background"
-          />
-          <Button type="submit" size="sm" disabled={isSubmitting || !newKeyword.trim() || !newCategoryId}>
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-            Add
-          </Button>
-        </form>
-      </div>
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <div className="px-4 py-3 border-b bg-muted/20 shrink-0">
+          <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4 mr-1" /> Add Mapping</Button>} />
+        </div>
+
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Mapping</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Keyword</label>
+              <Input
+                placeholder="Keyword..."
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+                disabled={isSubmitting}
+                className="bg-background"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Category</label>
+              <CategoryCombobox
+                categories={categories}
+                value={newCategoryId}
+                onChange={setNewCategoryId}
+                disabled={isSubmitting}
+                className="w-full bg-background"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-end gap-2 sm:justify-end flex-wrap sm:space-x-0">
+            <Button variant="outline" onClick={() => setIsAddModalOpen(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={() => handleAdd(undefined, false)} 
+              disabled={isSubmitting || !newKeyword.trim() || !newCategoryId}
+            >
+              Add More
+            </Button>
+            <Button 
+              onClick={() => handleAdd(undefined, true)} 
+              disabled={isSubmitting || !newKeyword.trim() || !newCategoryId}
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Search + stats */}
       <div className="px-4 py-2 border-b bg-muted/10 flex items-center gap-3 shrink-0">
@@ -243,8 +285,17 @@ export function MappingsTable({ categories }: MappingsTableProps) {
             placeholder="Search keyword..."
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-8 h-8 text-sm w-full"
+            className="pl-8 pr-8 h-8 text-sm w-full bg-background"
           />
+          {search && (
+            <button
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground hover:text-foreground focus:outline-none flex items-center justify-center"
+              onClick={() => handleSearchChange("")}
+              aria-label="Clear search"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <CategoryCombobox
           categories={[{ id: "all", name: "All Categories" }, ...categories]}
@@ -334,7 +385,14 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                     </td>
                     <td className="px-4 py-1 text-xs text-muted-foreground">
                       <div className="flex flex-col">
-                        <span className="truncate max-w-[100px]">{mapping.updatedBy}</span>
+                        <span 
+                          className="truncate max-w-[120px]" 
+                          title={`Created by: ${mapping.createdBy}\nUpdated by: ${mapping.updatedBy}`}
+                        >
+                          {mapping.createdBy === mapping.updatedBy 
+                            ? mapping.updatedBy 
+                            : `${mapping.createdBy} → ${mapping.updatedBy}`}
+                        </span>
                         {mapping.updatedAt && (
                           <span className="text-[10px] opacity-70">
                             {new Date(mapping.updatedAt).toLocaleDateString()}

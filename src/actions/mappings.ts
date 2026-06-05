@@ -93,7 +93,7 @@ export async function addMapping(keyword: string, categoryId: string, createdBy:
         set: { 
           categoryId,
           usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = ${categoryId} THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`, 
-          updatedBy: createdBy,
+          updatedBy: sql`CASE WHEN ${keywordMappings.categoryId} = ${categoryId} THEN ${keywordMappings.updatedBy} ELSE ${createdBy} END`,
           updatedAt: new Date() 
         }
       })
@@ -131,7 +131,7 @@ export async function batchAddMappings(mappings: { keyword: string; categoryId: 
         set: {
           categoryId: sql`EXCLUDED.category_id`,
           usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`,
-          updatedBy: createdBy,
+          updatedBy: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.updatedBy} ELSE ${createdBy} END`,
           updatedAt: new Date(),
         },
       });

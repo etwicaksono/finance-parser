@@ -8,6 +8,13 @@
       "when": 1779830624189,
       "tag": "0000_awesome_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780686651690,
+      "tag": "0001_clean_human_cannonball",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { MainWorkspace } from "@/components/layout/main-workspace";
 import { WhatsAppInput } from "@/components/workspace/whatsapp-input";
 import { SpreadsheetTable } from "@/components/workspace/spreadsheet-table";
-import { TransactionRow, CategoryOption, AccountOption } from "@/types";
+import { TransactionRow, CategoryOption, AccountOption, SessionImage } from "@/types";
 import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";
 import { detectDuplicates } from "@/features/validation/duplicate-detector";
@@ -15,6 +15,7 @@ import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
 import { addMapping, batchAddMappings } from "@/actions/mappings";
 import { cleanKeyword } from "@/lib/keyword-utils";
+import { isIsoDateAmbiguous } from "@/features/parser/date-parser";
 import * as React from "react";
 import { ReceiptScanInput } from "@/components/workspace/receipt-scan-input";
 import { GroupedItemsModal } from "./grouped-items-modal";
@@ -36,6 +37,7 @@ interface HomeClientProps {
   initialCategories: CategoryOption[];
   initialAccounts: AccountOption[];
   initialMappings: KeywordMapping[];
+  initialContraKeywords?: string[];
   defaultAiSettings: AiSettingsConfig;
   geminiModels: string[];
   swiftrouterModels: string[];
@@ -45,12 +47,13 @@ export function HomeClient({
   initialCategories, 
   initialAccounts, 
   initialMappings,
+  initialContraKeywords = [],
   defaultAiSettings,
   geminiModels,
   swiftrouterModels
 }: HomeClientProps) {
   const [rawTransactions, setRawTransactions] = useState<TransactionRow[]>([]);
-  const [sessionImages, setSessionImages] = useState<string[]>([]);
+  const [sessionImages, setSessionImages] = useState<SessionImage[]>([]);
   const [viewMode, setViewMode] = useState<"raw" | "grouped">("raw");
   const [groupAmountOverrides, setGroupAmountOverrides] = useState<Record<string, number>>({});
   const [editingGroupRow, setEditingGroupRow] = useState<TransactionRow | null>(null);
@@ -63,6 +66,7 @@ export function HomeClient({
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<import("@/types").SessionMetadata>({});
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [receiptFilter, setReceiptFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>(() => ["unmapped", ...initialCategories.map(c => c.id)]);
 
   React.useEffect(() => {
@@ -73,7 +77,7 @@ export function HomeClient({
         if (sess) {
           setCurrentSessionId(sess.id);
           setRawTransactions((sess.data as TransactionRow[]) || []);
-          setSessionImages((sess.images as string[]) || []);
+          setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
         }
       }
@@ -125,6 +129,10 @@ export function HomeClient({
 
       const itemsToClassify: string[] = [];
       const enrichedRows: TransactionRow[] = rawRows.map((row) => {
+        if (row.isDateAmbiguous === undefined) {
+          row.isDateAmbiguous = isIsoDateAmbiguous(row.date);
+        }
+        
         const cleaned = cleanKeyword(row.item);
         const suggestion = suggestCategory(cleaned, initialMappings, []);
         if (suggestion?.categoryId) {
@@ -132,8 +140,16 @@ export function HomeClient({
           const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
           if (catName) {
             const sign = getCategorySign(catName);
+            const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
+            
             if (sign === "income") row.amount = row.amount ? Math.abs(row.amount) : row.amount;
-            else if (sign === "expense") row.amount = row.amount ? -Math.abs(row.amount) : row.amount;
+            else if (sign === "expense") {
+               if (isContraItem && row.amount && row.amount > 0) {
+                 // Do not force to negative if it's a contra item and already positive
+               } else {
+                 row.amount = row.amount ? -Math.abs(row.amount) : row.amount;
+               }
+            }
           }
         } else {
           itemsToClassify.push(cleanKeyword(row.item));
@@ -156,9 +172,15 @@ export function HomeClient({
                 if (matchedCategory) {
                   row.categoryId = matchedCategory.id;
                   const sign = getCategorySign(matchedCategory.name);
+                  const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
+
                   if (row.amount) {
                     if (sign === "income") row.amount = Math.abs(row.amount);
-                    else if (sign === "expense") row.amount = -Math.abs(row.amount);
+                    else if (sign === "expense") {
+                      if (!(isContraItem && row.amount > 0)) {
+                         row.amount = -Math.abs(row.amount);
+                      }
+                    }
                   }
                   
                   const finalKeyword = aiCat.normalized_item_name || cleaned;
@@ -265,17 +287,26 @@ export function HomeClient({
     });
   }, [initialCategories]);
 
+  const uniqueReceipts = React.useMemo(() => {
+    const set = new Set<string>();
+    rawTransactions.forEach(r => { if (r.receiptName) set.add(r.receiptName); });
+    return Array.from(set).sort();
+  }, [rawTransactions]);
+
   const availableCategoryIds = React.useMemo(() => {
     const ids = new Set<string>();
     let baseData = rawTransactions;
     if (sourceFilter !== "all") {
       baseData = baseData.filter(r => r.source === sourceFilter);
     }
+    if (receiptFilter !== "all") {
+      baseData = baseData.filter(r => r.receiptName === receiptFilter);
+    }
     for (const row of baseData) {
       ids.add(row.categoryId ?? "unmapped");
     }
     return ids;
-  }, [rawTransactions, sourceFilter]);
+  }, [rawTransactions, sourceFilter, receiptFilter]);
 
   const activeCategories = React.useMemo(() => {
     return initialCategories.filter(c => availableCategoryIds.has(c.id));
@@ -286,11 +317,14 @@ export function HomeClient({
     if (sourceFilter !== "all") {
       result = result.filter(r => r.source === sourceFilter);
     }
+    if (receiptFilter !== "all") {
+      result = result.filter(r => r.receiptName === receiptFilter);
+    }
     result = result.filter(r => categoryFilter.includes(r.categoryId ?? "unmapped"));
     
     if (viewMode === "raw") return result;
     return computeGroupedTransactions(result, groupAmountOverrides);
-  }, [rawTransactions, viewMode, groupAmountOverrides, computeGroupedTransactions, sourceFilter, categoryFilter]);
+  }, [rawTransactions, viewMode, groupAmountOverrides, computeGroupedTransactions, sourceFilter, receiptFilter, categoryFilter]);
 
   const handleDataChange = (newData: TransactionRow[]) => {
     if (viewMode === "raw") {
@@ -299,6 +333,9 @@ export function HomeClient({
         let currentVisible = prev;
         if (sourceFilter !== "all") {
           currentVisible = currentVisible.filter(r => r.source === sourceFilter);
+        }
+        if (receiptFilter !== "all") {
+          currentVisible = currentVisible.filter(r => r.receiptName === receiptFilter);
         }
         currentVisible = currentVisible.filter(r => categoryFilter.includes(r.categoryId ?? "unmapped"));
         
@@ -366,6 +403,7 @@ export function HomeClient({
       const rawRows: TransactionRow[] = result.transactions.map(t => ({
         id: crypto.randomUUID(),
         date: t.date || format(new Date(), "yyyy-MM-dd"),
+        isDateAmbiguous: t.isDateAmbiguous ?? false,
         item: t.item,
         amount: t.amount,
         categoryId: null,
@@ -409,7 +447,7 @@ export function HomeClient({
     }
   };
 
-  const handleScan = async (images: { base64: string; mimeType: string }[], translateNames: boolean) => {
+  const handleScan = async (images: { id: string; name: string; base64: string; mimeType: string }[], translateNames: boolean) => {
     setProcessingText("Scanning receipt via AI...");
     try {
       const response = await scanReceiptImages(images, translateNames, localAiConfig);
@@ -422,6 +460,7 @@ export function HomeClient({
       }
       const rawRows = (response.data || []).map(r => ({ ...r, source: "scan" as const }));
       await processRawRows(rawRows);
+      return response.parsedIds;
     } catch (error: any) {
       console.error(error);
       toast.error(<ErrorToast title="Failed to scan receipt" message={error.message || "Failed to scan receipt"} />);
@@ -553,6 +592,19 @@ export function HomeClient({
                   <option value="manual" className="bg-background">Manual AI</option>
                 </select>
 
+                {uniqueReceipts.length > 0 && (
+                  <select 
+                    className="h-9 rounded-md border border-input bg-transparent px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={receiptFilter}
+                    onChange={(e) => setReceiptFilter(e.target.value)}
+                  >
+                    <option value="all" className="bg-background">Semua Nota</option>
+                    {uniqueReceipts.map(nota => (
+                      <option key={nota} value={nota} className="bg-background">{nota}</option>
+                    ))}
+                  </select>
+                )}
+
                 <CategoryMultiSelect
                   categories={activeCategories}
                   showUnmapped={availableCategoryIds.has("unmapped")}
@@ -579,6 +631,9 @@ export function HomeClient({
             <SpreadsheetTable 
               data={displayTransactions} 
               viewMode={viewMode}
+              categories={initialCategories}
+              accounts={initialAccounts}
+              contraKeywords={initialContraKeywords}
               onDataChange={handleDataChange} 
               onEditGroupedItems={(row) => setEditingGroupRow(row)}
               onCategoryChange={handleCategoryChange}
@@ -594,8 +649,6 @@ export function HomeClient({
                   return next;
                 });
               }}
-              categories={initialCategories}
-              accounts={initialAccounts}
               emptyMessage={
                 activeTab === "chat" ? "Tidak ada data. Paste riwayat WhatsApp Chat di samping untuk memulai." :
                 activeTab === "scan" ? "Tidak ada data. Scan/unggah foto nota belanja Anda di panel kiri." :

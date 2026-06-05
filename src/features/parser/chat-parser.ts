@@ -17,6 +17,7 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
   const lines = chat.split(/\r?\n/);
   
   let activeDate: string | undefined = undefined;
+  let activeDateAmbiguous: boolean = false;
   let activeSender: string | undefined = undefined;
 
   for (let i = 0; i < lines.length; i++) {
@@ -28,10 +29,11 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
     let contentToParse = trimmedLine;
 
     // 1. Check for chat timestamp and sender
-    const chatDate = extractChatDate(trimmedLine, defaultYear);
-    if (chatDate) {
+    const chatDateExtract = extractChatDate(trimmedLine, defaultYear);
+    if (chatDateExtract) {
       // When a new chat message starts, reset the date to the chat timestamp
-      activeDate = chatDate;
+      activeDate = chatDateExtract.date;
+      activeDateAmbiguous = chatDateExtract.isAmbiguous;
       
       // Extract sender and actual content
       // Pattern: [Date] Sender: Content
@@ -52,9 +54,10 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
     if (!contentToParse) continue;
 
     // 2. Check for explicit date override in the content
-    const explicitDate = extractExplicitDate(contentToParse, defaultYear);
-    if (explicitDate) {
-      activeDate = explicitDate;
+    const explicitDateExtract = extractExplicitDate(contentToParse, defaultYear);
+    if (explicitDateExtract) {
+      activeDate = explicitDateExtract.date;
+      activeDateAmbiguous = explicitDateExtract.isAmbiguous;
       // If the line is exclusively a date declaration, do not treat it as a transaction
       if (isJustDate(contentToParse)) {
         continue;
@@ -69,6 +72,7 @@ export function parseChat(chat: string, defaultYear: number = new Date().getFull
         amount: parsedLine.amount,
         date: activeDate,
         sender: activeSender,
+        isDateAmbiguous: activeDateAmbiguous,
       });
     }
   }

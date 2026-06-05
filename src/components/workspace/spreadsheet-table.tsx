@@ -5,9 +5,12 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
+  SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, AlertTriangle, Plus, Trash2, Check, Trash } from "lucide-react";
+import { Copy, AlertTriangle, Plus, Trash2, Check, Trash, ClipboardPaste, ArrowUp, ArrowDown, ArrowUpDown, CalendarCheck, ArrowRightLeft } from "lucide-react";
+import Swal from "sweetalert2";
 
 import {
   Popover,
@@ -36,6 +39,7 @@ interface SpreadsheetTableProps {
   data: TransactionRow[];
   categories: CategoryOption[];
   accounts: AccountOption[];
+  contraKeywords?: string[];
   viewMode?: "raw" | "grouped";
   onDataChange?: (data: TransactionRow[]) => void;
   onEditGroupedItems?: (row: TransactionRow) => void;
@@ -52,12 +56,13 @@ interface CellPos {
 
 const RECENT_ACCOUNTS: string[] = [];
 
-export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw", onDataChange, onEditGroupedItems, onCategoryChange, onCopyRows, onResolveDuplicate, emptyMessage = "No data available." }: SpreadsheetTableProps) {
+export function SpreadsheetTable({ data, categories, accounts, contraKeywords = [], viewMode = "raw", onDataChange, onEditGroupedItems, onCategoryChange, onCopyRows, onResolveDuplicate, emptyMessage = "No data available." }: SpreadsheetTableProps) {
   const tableId = React.useId().replace(/:/g, "");
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
   const [rowSelection, setRowSelection] = React.useState({});
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const [includeHeader, setIncludeHeader] = React.useState(true);
 
   const insertRowBelow = React.useCallback((index: number) => {
@@ -93,8 +98,21 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
   const [selectionFocus, setSelectionFocus] = React.useState<CellPos | null>(null);
   const [copyFlash, setCopyFlash] = React.useState(false);
   const isDragging = React.useRef(false);
+  const isKeyboardNavigating = React.useRef(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const autoScrollInterval = React.useRef<NodeJS.Timeout | null>(null);
+  const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number, rowIndex: number, colIndex: number } | null>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener("click", handleClickOutside);
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setContextMenu(null);
+    });
+    return () => {
+      window.removeEventListener("click", handleClickOutside);
+    };
+  }, []);
 
   React.useEffect(() => {
     setTableData(data);
@@ -232,8 +250,43 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
       },
       {
         accessorKey: "date",
-        header: "Date",
-        cell: (info) => info.getValue(),
+        header: ({ column }) => {
+          const isSorted = column.getIsSorted();
+          return (
+            <Button
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                column.toggleSorting(isSorted === "asc");
+              }}
+              className="flex items-center p-0 h-10 w-full justify-start rounded-none hover:bg-transparent px-2 -mx-2"
+            >
+              Date
+              {isSorted === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : isSorted === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              )}
+            </Button>
+          );
+        },
+        cell: (info) => {
+          const row = info.row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <span className={row.isDateAmbiguous ? "font-bold text-yellow-600 dark:text-yellow-500" : ""}>
+                {info.getValue() as string}
+              </span>
+              {row.isDateAmbiguous && (
+                <span title="Ambiguous Date Format. Right click to swap Day and Month.">
+                  <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
+                </span>
+              )}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "accountId",
@@ -352,8 +405,11 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
     data: tableData,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     onRowSelectionChange: setRowSelection,
-    state: { rowSelection },
+    onSortingChange: setSorting,
+    enableSortingRemoval: true,
+    state: { rowSelection, sorting },
   });
 
   // Calculate sum for selected numeric cells (Google Sheets style)
@@ -459,9 +515,13 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
   }, [table, categories, accounts, onCopyRows, includeHeader]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
+    isKeyboardNavigating.current = true;
     setTimeout(() => {
       const el = document.querySelector(`[data-row-index="${row}"][data-col-index="${col}"]`) as HTMLElement;
       el?.focus();
+      setTimeout(() => {
+        isKeyboardNavigating.current = false;
+      }, 50);
     }, 0);
   }, []);
 
@@ -493,6 +553,65 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
     [columns, tableData, viewMode, onEditGroupedItems]
   );
 
+  const applyCellUpdate = React.useCallback((row: TransactionRow, key: string, valToSave: string) => {
+    if (key === "amount") {
+      const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
+      (row as any)[key] = isNaN(parsed) ? null : parsed;
+    } else if (key === "categoryId") {
+      const matched = categories.find(c => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
+      const oldVal = (row as any)[key];
+      const newVal = matched ? matched.id : null;
+      (row as any)[key] = newVal;
+      
+      if (oldVal !== newVal && newVal) {
+        onCategoryChange?.(row.id as string, row.item as string, newVal);
+      }
+      
+      // If category is manually edited, auto-adjust the amount sign
+      if (typeof row.amount === "number") {
+        const catName = categories.find((c) => c.id === newVal)?.name;
+        if (catName) {
+          const sign = getCategorySign(catName);
+          const isContraItem = contraKeywords.some(kw => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
+          
+          if (sign === "income") row.amount = Math.abs(row.amount);
+          else if (sign === "expense") {
+            if (!(isContraItem && row.amount > 0)) {
+               row.amount = -Math.abs(row.amount);
+            }
+          }
+        }
+      }
+    } else if (key === "accountId") {
+      const matched = accounts.find(c => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
+      (row as any)[key] = matched ? matched.id : null;
+    } else if (key === "item") {
+      (row as any)[key] = valToSave;
+      let sum = 0;
+      let hasPrice = false;
+      valToSave.split("\n").forEach((line: string) => {
+        const match = line.match(/=>\s*([\d\.]+)k?/i);
+        if (match && match[1]) {
+          hasPrice = true;
+          const val = parseFloat(match[1]);
+          const rawPrice = line.toLowerCase().includes("k") ? val * 1000 : val;
+          const isContraItem = contraKeywords.some(kw => line.toLowerCase().includes(kw.toLowerCase()));
+          if (isContraItem) {
+             sum -= rawPrice;
+          } else {
+             sum += rawPrice;
+          }
+        }
+      });
+      if (hasPrice) {
+        const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
+        (row as any).amount = sum * currentSign;
+      }
+    } else {
+      (row as any)[key] = valToSave;
+    }
+  }, [categories, accounts, onCategoryChange]);
+
   const saveEdit = React.useCallback(
     (rowIndex: number, colIndex: number, explicitValue?: string) => {
       setEditingCell((prev) => {
@@ -501,58 +620,29 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
         if (!colDef || !("accessorKey" in colDef)) return null;
         const key = (colDef as any).accessorKey;
         const newData = [...tableData];
-        const row = { ...newData[rowIndex] };
+        const rowData = table.getRowModel().rows[rowIndex];
+        const origIndex = rowData ? rowData.index : rowIndex;
+        const row = { ...newData[origIndex] } as TransactionRow;
         const valToSave = explicitValue !== undefined ? explicitValue : editValue;
-        if (key === "amount") {
-          const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
-          (row as any)[key] = isNaN(parsed) ? null : parsed;
-        } else if (key === "categoryId") {
-          const oldVal = (row as any)[key];
-          (row as any)[key] = valToSave;
-          if (oldVal !== valToSave && valToSave) {
-            onCategoryChange?.(row.id as string, row.item as string, valToSave as string);
-          }
-          // If category is manually edited, auto-adjust the amount sign
-          if (typeof row.amount === "number") {
-            const catName = categories.find((c) => c.id === valToSave)?.name;
-            if (catName) {
-              const sign = getCategorySign(catName);
-              if (sign === "income") row.amount = Math.abs(row.amount);
-              else if (sign === "expense") row.amount = -Math.abs(row.amount);
-            }
-          }
-        } else if (key === "item") {
-          (row as any)[key] = valToSave;
-          let sum = 0;
-          let hasPrice = false;
-          valToSave.split("\n").forEach((line: string) => {
-            const match = line.match(/=>\s*([\d\.]+)k?/i);
-            if (match && match[1]) {
-              hasPrice = true;
-              const val = parseFloat(match[1]);
-              sum += line.toLowerCase().includes("k") ? val * 1000 : val;
-            }
-          });
-          if (hasPrice) {
-            const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
-            (row as any).amount = sum * currentSign;
-          }
-        } else {
-          (row as any)[key] = valToSave;
-        }
-        newData[rowIndex] = row as TransactionRow;
+        
+        applyCellUpdate(row, key, valToSave);
+        
+        newData[origIndex] = row as TransactionRow;
         setTableData(newData);
         onDataChange?.(newData);
         return null;
       });
     },
-    [columns, editValue, tableData, onDataChange, onCategoryChange]
+    [columns, editValue, tableData, applyCellUpdate, onDataChange, table]
   );
 
   // Mouse handlers for drag-selection
   const handleCellMouseDown = (e: React.MouseEvent, rowIndex: number, colIndex: number, isSelectCol: boolean) => {
     if (isSelectCol) return;
     if (editingCell) return;
+    
+    if (e.button === 2) return; // Let onContextMenu handle right clicks
+
     // Prevent text selection in the browser while dragging across cells
     e.preventDefault();
 
@@ -565,15 +655,141 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
       setSelectionFocus({ rowIndex, colIndex });
     }
 
+    focusCell(rowIndex, colIndex);
     isDragging.current = true;
   };
 
   const handleCellMouseEnter = (rowIndex: number, colIndex: number, isSelectCol: boolean) => {
     if (!isDragging.current || isSelectCol) return;
     setSelectionFocus({ rowIndex, colIndex });
+    focusCell(rowIndex, colIndex);
   };
 
+  const processPasteData = React.useCallback(
+    (clipboardText: string) => {
+      if (editingCell) return;
 
+      const parsedRows = clipboardText.split(/\r?\n/).map(row => row.split("\t"));
+      const lastRow = parsedRows[parsedRows.length - 1];
+      if (lastRow && lastRow.length === 1 && lastRow[0] === "") {
+        parsedRows.pop();
+      }
+      if (parsedRows.length === 0) return;
+
+      let startRow = selectionAnchor?.rowIndex ?? 0;
+      let startCol = selectionAnchor?.colIndex ?? 0;
+      
+      const isSingleValuePaste = parsedRows.length === 1 && parsedRows[0]?.length === 1;
+
+      setTableData(prev => {
+        const newData = [...prev];
+        
+        // Behavior 1: Pasting single value into a larger selected range (fill range)
+        if (isSingleValuePaste && selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol)) {
+           const val = parsedRows[0]?.[0] || "";
+           for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
+             const rowData = table.getRowModel().rows[r];
+             const origIndex = rowData ? rowData.index : r;
+             const row = { ...newData[origIndex] } as TransactionRow;
+             let rowChanged = false;
+             for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
+               const colDef = columns[c];
+               if (colDef && "accessorKey" in colDef) {
+                 const key = (colDef as any).accessorKey;
+                 if (key !== "select" && key !== "actions") {
+                   applyCellUpdate(row, key, val);
+                   rowChanged = true;
+                 }
+               }
+             }
+             if (rowChanged) newData[origIndex] = row;
+           }
+        } 
+        // Behavior 2: Pasting standard multiline/multicol data starting at anchor
+        else {
+           for (let r = 0; r < parsedRows.length; r++) {
+             const targetRow = startRow + r;
+             if (targetRow >= newData.length) {
+               // Optional: expand rows if needed
+               const sourceRow = newData[newData.length - 1];
+               newData.push({
+                 id: crypto.randomUUID(),
+                 date: sourceRow ? sourceRow.date : "",
+                 item: "",
+                 amount: null,
+                 categoryId: null,
+                 accountId: sourceRow ? sourceRow.accountId : null,
+                 notes: "",
+               });
+             }
+             
+             const rowData = table.getRowModel().rows[targetRow];
+             const origIndex = rowData ? rowData.index : newData.length - 1;
+             const row = { ...newData[origIndex] } as TransactionRow;
+             let rowChanged = false;
+             const currentRow = parsedRows[r];
+             if (!currentRow) continue;
+             
+             for (let c = 0; c < currentRow.length; c++) {
+               const targetCol = startCol + c;
+               if (targetCol >= columns.length) continue;
+               const colDef = columns[targetCol];
+               if (colDef && "accessorKey" in colDef) {
+                 const key = (colDef as any).accessorKey;
+                 if (key !== "select" && key !== "actions") {
+                   applyCellUpdate(row, key, currentRow[c] || "");
+                   rowChanged = true;
+                 }
+               }
+             }
+             if (rowChanged) newData[origIndex] = row;
+           }
+        }
+        
+        onDataChange?.(newData);
+        return newData;
+      });
+    },
+    [editingCell, selectionAnchor, selectionRange, columns, applyCellUpdate, onDataChange, table]
+  );
+
+  const handleCopyAction = React.useCallback((rIndex: number, cIndex: number) => {
+    const colDef = columns[cIndex];
+    const isSelectCol = colDef && colDef.id === "select";
+    const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
+
+    if (selectionRange) {
+      copySelectionToClipboard();
+    } else if (!isSelectCol) {
+      // No range selection — copy single focused cell
+      const row = tableData[rIndex];
+      if (row && key) {
+        navigator.clipboard.writeText(getCellValue(row, key)).then(() => {
+          setCopyFlash(true);
+          setTimeout(() => setCopyFlash(false), 600);
+        });
+      }
+    }
+  }, [selectionRange, columns, tableData, copySelectionToClipboard]);
+
+  const handlePasteAction = React.useCallback(() => {
+    if (!navigator.clipboard) {
+      Swal.fire("Error", "Browser Anda tidak mendukung akses Clipboard otomatis. Silakan gunakan browser terbaru.", "error");
+      return;
+    }
+    navigator.clipboard.readText().then(text => {
+      if (text) {
+        try {
+          processPasteData(text);
+        } catch (err: any) {
+          Swal.fire("Paste Error", err.message, "error");
+        }
+      }
+    }).catch(err => {
+      console.error("Failed to read clipboard:", err);
+      Swal.fire("Akses Ditolak", "Gagal membaca clipboard. Pastikan Anda mengizinkan akses clipboard saat muncul popup di browser.", "warning");
+    });
+  }, [processPasteData]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
@@ -588,6 +804,8 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
         e.preventDefault();
         saveEdit(rowIndex, colIndex);
         const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+        setSelectionAnchor({ rowIndex: nextRow, colIndex });
+        setSelectionFocus({ rowIndex: nextRow, colIndex });
         focusCell(nextRow, colIndex);
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -596,26 +814,18 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
       } else if (e.key === "Tab") {
         e.preventDefault();
         saveEdit(rowIndex, colIndex);
-        focusCell(rowIndex, Math.min(columns.length - 1, colIndex + 1));
+        const nextCol = Math.min(columns.length - 1, colIndex + 1);
+        setSelectionAnchor({ rowIndex, colIndex: nextCol });
+        setSelectionFocus({ rowIndex, colIndex: nextCol });
+        focusCell(rowIndex, nextCol);
       }
       return;
     }
 
     // Ctrl+C: copy selection range (or single cell if no range)
-    if (e.key === "c" && (e.ctrlKey || e.metaKey)) {
+    if (e.key.toLowerCase() === "c" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      if (selectionRange) {
-        copySelectionToClipboard();
-      } else if (!isSelectCol) {
-        // No range selection — copy single focused cell
-        const row = tableData[rowIndex];
-        if (row && key) {
-          navigator.clipboard.writeText(getCellValue(row, key)).then(() => {
-            setCopyFlash(true);
-            setTimeout(() => setCopyFlash(false), 600);
-          });
-        }
-      }
+      handleCopyAction(rowIndex, colIndex);
       return;
     }
 
@@ -624,12 +834,61 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
 
     const isShift = e.shiftKey;
 
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      setTableData(prev => {
+        const newData = [...prev];
+        let changed = false;
+
+        if (selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol)) {
+          for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
+            const rowData = table.getRowModel().rows[r];
+            const origIndex = rowData ? rowData.index : r;
+            const row = { ...newData[origIndex] } as TransactionRow;
+            let rowChanged = false;
+            for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
+              const colDef = columns[c];
+              if (colDef && "accessorKey" in colDef) {
+                const k = (colDef as any).accessorKey;
+                if (k !== "select" && k !== "actions") {
+                  applyCellUpdate(row, k, "");
+                  rowChanged = true;
+                }
+              }
+            }
+            if (rowChanged) newData[origIndex] = row;
+            changed = changed || rowChanged;
+          }
+        } else if (!isSelectCol) {
+          if (key && key !== "select" && key !== "actions") {
+            const rowData = table.getRowModel().rows[rowIndex];
+            const origIndex = rowData ? rowData.index : rowIndex;
+            const row = { ...newData[origIndex] } as TransactionRow;
+            applyCellUpdate(row, key, "");
+            newData[origIndex] = row;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          onDataChange?.(newData);
+        }
+        return newData;
+      });
+      return;
+    }
+
     if (e.key === "ArrowUp") { e.preventDefault(); nextRow = Math.max(0, rowIndex - 1); }
     else if (e.key === "ArrowDown") { e.preventDefault(); nextRow = Math.min(tableData.length - 1, rowIndex + 1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); nextCol = Math.max(0, colIndex - 1); }
     else if (e.key === "ArrowRight") { e.preventDefault(); nextCol = Math.min(columns.length - 1, colIndex + 1); }
     else if (e.key === "Enter" && !isSelectCol) { e.preventDefault(); startEditing(rowIndex, colIndex); return; }
     else if (e.key === " " && isSelectCol) { return; }
+    else if (e.key.toLowerCase() === "v" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handlePasteAction();
+      return;
+    }
     else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown && !isSelectCol) {
       startEditing(rowIndex, colIndex, e.key);
       e.preventDefault();
@@ -651,6 +910,7 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
       focusCell(nextRow, nextCol);
     }
   };
+
 
   const isAnySingleCellSelected = selectionAnchor &&
     selectionFocus &&
@@ -759,10 +1019,30 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                         onMouseDown={(e) => handleCellMouseDown(e, rowIndex, colIndex, isSelectCol)}
                         onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex, isSelectCol)}
-                        onFocus={() => {
-                          if (!isDragging.current && !editingCell) {
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const inSelectionRange = selectionRange && 
+                            rowIndex >= selectionRange.minRow && rowIndex <= selectionRange.maxRow &&
+                            colIndex >= selectionRange.minCol && colIndex <= selectionRange.maxCol;
+
+                          if (!inSelectionRange) {
                             setSelectionAnchor({ rowIndex, colIndex });
                             setSelectionFocus({ rowIndex, colIndex });
+                            focusCell(rowIndex, colIndex);
+                          }
+
+                          setContextMenu({ x: e.clientX, y: e.clientY, rowIndex, colIndex });
+                        }}
+                        onFocus={() => {
+                          if (!isDragging.current && !editingCell && !isKeyboardNavigating.current) {
+                            const inSelectionRange = selectionRange && 
+                              rowIndex >= selectionRange.minRow && rowIndex <= selectionRange.maxRow &&
+                              colIndex >= selectionRange.minCol && colIndex <= selectionRange.maxCol;
+
+                            if (!inSelectionRange) {
+                              setSelectionAnchor({ rowIndex, colIndex });
+                              setSelectionFocus({ rowIndex, colIndex });
+                            }
                           }
                         }}
                       >
@@ -868,6 +1148,101 @@ export function SpreadsheetTable({ data, categories, accounts, viewMode = "raw",
         <div className="absolute bottom-6 right-6 bg-primary text-primary-foreground text-sm px-4 py-2 rounded-full shadow-lg font-medium flex gap-3 items-center z-50 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
           <span>Sum: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(selectionStats.sum)}</span>
           <span className="text-primary-foreground/70 text-xs">({selectionStats.count} cells)</span>
+        </div>
+      )}
+      {contextMenu && (
+        <div 
+          className="fixed z-50 min-w-40 bg-white dark:bg-zinc-800 border dark:border-zinc-700 shadow-md rounded-md py-1 text-sm text-zinc-800 dark:text-zinc-200"
+          style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 160) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+             const colDef = columns[contextMenu.colIndex];
+             const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+             const row = tableData[contextMenu.rowIndex];
+             const isDateColumn = key === "date";
+             const isDateWarning = isDateColumn && row?.isDateAmbiguous;
+             return (
+               <>
+                 {isDateWarning && (
+                   <button 
+                     className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2 text-green-600"
+                     onClick={() => {
+                       setTableData(prev => {
+                         const rMin = selectionRange ? selectionRange.minRow : contextMenu.rowIndex;
+                         const rMax = selectionRange ? selectionRange.maxRow : contextMenu.rowIndex;
+                         const newData = [...prev];
+                         for (let r = rMin; r <= rMax; r++) {
+                           const rowData = table.getRowModel().rows[r];
+                           const origIndex = rowData ? rowData.index : r;
+                           newData[origIndex] = { ...newData[origIndex]!, isDateAmbiguous: false };
+                         }
+                         onDataChange?.(newData);
+                         return newData;
+                       });
+                       setContextMenu(null);
+                     }}
+                   >
+                     <CalendarCheck className="w-4 h-4" /> Confirm Date
+                   </button>
+                 )}
+                 {isDateColumn && (
+                   <button 
+                     className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2 text-blue-600 dark:text-blue-400"
+                     onClick={() => {
+                       setTableData(prev => {
+                         const rMin = selectionRange ? selectionRange.minRow : contextMenu.rowIndex;
+                         const rMax = selectionRange ? selectionRange.maxRow : contextMenu.rowIndex;
+                         const newData = [...prev];
+                         for (let r = rMin; r <= rMax; r++) {
+                           const rowData = table.getRowModel().rows[r];
+                           const origIndex = rowData ? rowData.index : r;
+                           const currDate = newData[origIndex]?.date;
+                           if (currDate) {
+                             const parts = currDate.split("-");
+                             if (parts.length === 3) {
+                               const y = parts[0];
+                               const m = parts[1];
+                               const d = parts[2];
+                               newData[origIndex] = { 
+                                 ...newData[origIndex]!, 
+                                 date: `${y}-${d}-${m}`,
+                                 isDateAmbiguous: false 
+                               };
+                             }
+                           }
+                         }
+                         onDataChange?.(newData);
+                         return newData;
+                       });
+                       setContextMenu(null);
+                     }}
+                   >
+                     <ArrowRightLeft className="w-4 h-4" /> Swap Day & Month
+                   </button>
+                 )}
+                 {isDateColumn && <div className="h-px bg-border my-1 mx-2" />}
+                 <button 
+                   className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                   onClick={() => {
+                     handleCopyAction(contextMenu.rowIndex, contextMenu.colIndex);
+                     setContextMenu(null);
+                   }}
+                 >
+                   <Copy className="w-4 h-4" /> Copy
+                 </button>
+                 <button 
+                   className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                   onClick={() => {
+                     handlePasteAction();
+                     setContextMenu(null);
+                   }}
+                 >
+                   <ClipboardPaste className="w-4 h-4" /> Paste
+                 </button>
+               </>
+             );
+          })()}
         </div>
       )}
     </div>

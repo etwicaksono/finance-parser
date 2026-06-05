@@ -11,4 +11,5 @@ export * from "./accounts";
 export * from "./keyword-mappings";
 export * from "./aliases";
 export * from "./duplicate-hashes";
+export * from "./contra-keywords";
 export * from "./sessions";

@@ -1,3 +1,8 @@
+export interface DateExtraction {
+  date: string;
+  isAmbiguous: boolean;
+}
+
 /**
  * Extracts a WhatsApp timestamp from the beginning of a line.
  * Formats supported:
@@ -5,9 +10,9 @@
  * - [16/05/26, 11:38:00] -> [DD/MM/YY, HH:mm:ss]
  * - [16/05/2026, 11:38] -> [DD/MM/YYYY, HH:mm]
  * 
- * Returns ISO Date string (YYYY-MM-DD) or null.
+ * Returns DateExtraction or null.
  */
-export function extractChatDate(line: string, defaultYear: number = new Date().getFullYear()): string | null {
+export function extractChatDate(line: string, defaultYear: number = new Date().getFullYear()): DateExtraction | null {
   const match = line.match(/^\[(.*?)\]/);
   if (!match) return null;
 
@@ -50,15 +55,21 @@ export function extractChatDate(line: string, defaultYear: number = new Date().g
     return null;
   }
 
-  return formatIso(y, m, d);
+  const isoDate = formatIso(y, m, d);
+  if (!isoDate) return null;
+
+  return {
+    date: isoDate,
+    isAmbiguous: d <= 12 && m <= 12 && d !== m
+  };
 }
 
 /**
  * Extracts an explicit override date from the text message.
  * Matches formats like: 14/05/2026, 14-05-2026, Kamis, 14-05-2026, 14 Mei 2026
- * If found, returns ISO Date string (YYYY-MM-DD), else null.
+ * If found, returns DateExtraction, else null.
  */
-export function extractExplicitDate(text: string, defaultYear: number = new Date().getFullYear()): string | null {
+export function extractExplicitDate(text: string, defaultYear: number = new Date().getFullYear()): DateExtraction | null {
   // Regex to match DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
   const regex = /\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b/;
   const match = text.match(regex);
@@ -67,13 +78,21 @@ export function extractExplicitDate(text: string, defaultYear: number = new Date
     let m = parseInt(match[2] || "1", 10);
     let y = parseInt(match[3] || "2000", 10);
 
+    const originalD = d;
+    const originalM = m;
+
     if (y < 100) y += 2000;
     if (m > 12 && d <= 12) {
       const temp = d;
       d = m;
       m = temp;
     }
-    return formatIso(y, m, d);
+    const isoDate = formatIso(y, m, d);
+    if (!isoDate) return null;
+    return {
+      date: isoDate,
+      isAmbiguous: originalD <= 12 && originalM <= 12 && originalD !== originalM
+    };
   }
 
   // Textual dates: 14 May 2026, 14 Mei 2026, 14 Mei
@@ -90,7 +109,14 @@ export function extractExplicitDate(text: string, defaultYear: number = new Date
     let y = textMatch[3] ? parseInt(textMatch[3], 10) : defaultYear;
     if (y < 100) y += 2000;
     
-    return formatIso(y, m, d);
+    const isoDate = formatIso(y, m, d);
+    if (!isoDate) return null;
+
+    // Textual dates are never ambiguous because the month is explicitly named
+    return {
+      date: isoDate,
+      isAmbiguous: false
+    };
   }
 
   return null;
@@ -114,4 +140,17 @@ export function isJustDate(text: string): boolean {
   const textDate = "\\d{1,2}\\s+(?:jan|feb|mar|apr|mei|may|jun|jul|agu|aug|sep|okt|oct|nov|des|dec)[a-z]*(?:\\s+\\d{2,4})?";
   const regex = new RegExp(`^(?:${dayNames}\\s*,?\\s*)?(?:${numericDate}|${textDate})$`, "i");
   return regex.test(text.trim());
+}
+
+/**
+ * Checks if a given ISO date string (YYYY-MM-DD) is ambiguous,
+ * meaning both the month and day parts are <= 12 and not equal.
+ */
+export function isIsoDateAmbiguous(isoDate: string | null | undefined): boolean {
+  if (!isoDate) return false;
+  const parts = isoDate.split("-");
+  if (parts.length !== 3) return false;
+  const m = parseInt(parts[1] || "1", 10);
+  const d = parseInt(parts[2] || "1", 10);
+  return m <= 12 && d <= 12 && m !== d;
 }

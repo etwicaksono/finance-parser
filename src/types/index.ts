@@ -16,6 +16,13 @@ export interface SuggestionResult {
   confidence: number;
 }
 
+export interface SessionImage {
+  id: string;
+  url: string;
+  name: string;
+  isParsed: boolean;
+}
+
 export interface TransactionRow {
   id: string; // Unique identifier for the UI row
   date: string; // YYYY-MM-DD
@@ -27,6 +34,7 @@ export interface TransactionRow {
   // UI Specific State
   isDuplicate?: boolean;
   isValid?: boolean;
+  isDateAmbiguous?: boolean;
   suggestion?: SuggestionMatch;
   // AI Categorization State (runtime only — not persisted to DB)
   aiType?: "income" | "expense";
@@ -35,6 +43,7 @@ export interface TransactionRow {
   rawItemIds?: string[];
   // Data Source Tracking
   source?: "chat" | "scan" | "manual";
+  receiptName?: string;
 }
 
 export interface SessionMetadata {

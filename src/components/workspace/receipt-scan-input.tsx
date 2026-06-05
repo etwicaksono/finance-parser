@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2, ScanText, X, ImagePlus, Play, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { Loader2, ScanText, X, ImagePlus, Play, Trash2, ZoomIn, ZoomOut, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { SessionImage } from "@/types";
 
 interface PreviewFile {
   id: string;
@@ -12,14 +13,16 @@ interface PreviewFile {
   previewUrl: string;
   cloudinaryUrl?: string;
   isUploading?: boolean;
+  name: string;
+  isParsed: boolean;
 }
 
 interface ReceiptScanInputProps {
   translateNames?: boolean;
   onTranslateNamesChange?: (value: boolean) => void;
-  onScan?: (images: { base64: string; mimeType: string }[], translateNames: boolean) => void;
-  sessionImages?: string[];
-  onImagesChange?: (images: string[]) => void;
+  onScan?: (images: { id: string; name: string; base64: string; mimeType: string }[], translateNames: boolean) => Promise<string[] | void>;
+  sessionImages?: SessionImage[] | string[];
+  onImagesChange?: (images: SessionImage[]) => void;
   onClearInput?: () => void;
   onClearOutput?: () => void;
 }
@@ -44,11 +47,25 @@ export function ReceiptScanInput({
 
   useEffect(() => {
     if (sessionImages && sessionImages.length > 0) {
-      setFiles(sessionImages.map(url => ({
-        id: crypto.randomUUID(),
-        previewUrl: url,
-        cloudinaryUrl: url,
-      })));
+      setFiles(sessionImages.map(img => {
+        if (typeof img === 'string') {
+          return {
+            id: crypto.randomUUID(),
+            previewUrl: img,
+            cloudinaryUrl: img,
+            name: "Nota Lama",
+            isParsed: false
+          };
+        } else {
+          return {
+            id: img.id,
+            previewUrl: img.url,
+            cloudinaryUrl: img.url,
+            name: img.name,
+            isParsed: img.isParsed
+          };
+        }
+      }));
     }
   }, []); // Initialize on mount based on key reset
 
@@ -56,43 +73,67 @@ export function ReceiptScanInput({
     if (!onImagesChange) return;
     const isUploading = files.some(f => f.isUploading);
     if (!isUploading) {
-       const urls = files.map(f => f.cloudinaryUrl).filter(Boolean) as string[];
-       onImagesChange(urls);
+       const mapped = files
+         .filter(f => f.cloudinaryUrl)
+         .map(f => ({
+           id: f.id,
+           url: f.cloudinaryUrl!,
+           name: f.name,
+           isParsed: f.isParsed
+         }));
+       onImagesChange(mapped);
     }
   }, [files, onImagesChange]);
 
   const addFiles = useCallback(async (incoming: File[]) => {
     const imageFiles = incoming.filter((f) => f.type.startsWith("image/"));
     
-    const newPreviews: PreviewFile[] = imageFiles.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-      isUploading: true
-    }));
-    
-    setFiles((prev) => [...prev, ...newPreviews]);
+    setFiles((currentFiles) => {
+      const currentHighest = currentFiles.reduce((max, f) => {
+        const match = f.name?.match(/^Nota (\d+)$/);
+        if (match && match[1]) return Math.max(max, parseInt(match[1]));
+        return max;
+      }, 0);
+      
+      const newPreviews: PreviewFile[] = imageFiles.map((file, i) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        isUploading: true,
+        name: `Nota ${currentHighest + i + 1}`,
+        isParsed: false
+      }));
+      
+      const updatedFiles = [...currentFiles, ...newPreviews];
+      
+      // We need to trigger the upload process outside the state updater
+      // but using setTimeout to ensure the state has settled.
+      setTimeout(async () => {
+        const { uploadImageToCloudinary } = await import("@/actions/cloudinary");
+        for (const preview of newPreviews) {
+           const reader = new FileReader();
+           const base64Promise = new Promise<string>((resolve) => {
+             reader.onload = () => resolve((reader.result as string).split(",")[1] || "");
+             reader.readAsDataURL(preview.file!);
+           });
+           const base64 = await base64Promise;
+           
+           const url = await uploadImageToCloudinary(base64);
+           
+           setFiles((prev) => prev.map(f => {
+             if (f.id !== preview.id) return f;
+             const updated: PreviewFile = { ...f, isUploading: false };
+             if (url) updated.cloudinaryUrl = url;
+             return updated;
+           }));
+        }
+      }, 0);
 
-    const { uploadImageToCloudinary } = await import("@/actions/cloudinary");
-
-    for (const preview of newPreviews) {
-       const reader = new FileReader();
-       const base64Promise = new Promise<string>((resolve) => {
-         reader.onload = () => resolve((reader.result as string).split(",")[1] || "");
-         reader.readAsDataURL(preview.file!);
-       });
-       const base64 = await base64Promise;
-       
-       const url = await uploadImageToCloudinary(base64);
-       
-       setFiles((prev) => prev.map(f => {
-         if (f.id !== preview.id) return f;
-         const updated: PreviewFile = { ...f, isUploading: false };
-         if (url) updated.cloudinaryUrl = url;
-         return updated;
-       }));
-    }
+      return updatedFiles;
+    });
   }, []);
+
+
 
   const removeFile = (id: string) => {
     setFiles((prev) => {
@@ -148,14 +189,15 @@ export function ReceiptScanInput({
   }, [handlePaste]);
 
   const handleScan = async () => {
-    if (!onScan || files.length === 0) return;
+    const unparsedFiles = files.filter(f => !f.isParsed);
+    if (!onScan || unparsedFiles.length === 0) return;
 
     const images = await Promise.all(
-      files.map(async (pf) => {
+      unparsedFiles.map(async (pf) => {
         if (pf.file) {
-           return new Promise<{ base64: string; mimeType: string }>((resolve, reject) => {
+           return new Promise<{ id: string; name: string; base64: string; mimeType: string }>((resolve, reject) => {
              const reader = new FileReader();
-             reader.onload = () => resolve({ base64: (reader.result as string).split(",")[1] || "", mimeType: pf.file!.type });
+             reader.onload = () => resolve({ id: pf.id, name: pf.name, base64: (reader.result as string).split(",")[1] || "", mimeType: pf.file!.type });
              reader.onerror = reject;
              reader.readAsDataURL(pf.file!);
            });
@@ -164,9 +206,9 @@ export function ReceiptScanInput({
              const res = await fetch(pf.cloudinaryUrl as string);
              if (!res.ok) throw new Error("Fetch failed");
              const blob = await res.blob();
-             return new Promise<{ base64: string; mimeType: string }>((resolve, reject) => {
+             return new Promise<{ id: string; name: string; base64: string; mimeType: string }>((resolve, reject) => {
                const reader = new FileReader();
-               reader.onload = () => resolve({ base64: (reader.result as string).split(",")[1] || "", mimeType: blob.type });
+               reader.onload = () => resolve({ id: pf.id, name: pf.name, base64: (reader.result as string).split(",")[1] || "", mimeType: blob.type });
                reader.onerror = reject;
                reader.readAsDataURL(blob);
              });
@@ -174,12 +216,17 @@ export function ReceiptScanInput({
              console.error("Failed to fetch image from Cloudinary for scanning", e);
            }
         }
-        return { base64: "", mimeType: "" };
+        return { id: pf.id, name: pf.name, base64: "", mimeType: "" };
       })
     );
 
-    onScan(images.filter(img => img.base64), translateNames);
+    const parsedIds = await onScan(images.filter(img => img.base64), translateNames);
+    if (parsedIds && Array.isArray(parsedIds) && parsedIds.length > 0) {
+      setFiles((prev) => prev.map((f) => parsedIds.includes(f.id) ? { ...f, isParsed: true } : f));
+    }
   };
+
+  const unparsedCount = files.filter(f => !f.isParsed).length;
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -195,11 +242,11 @@ export function ReceiptScanInput({
             <Button
               size="sm"
               onClick={handleScan}
-              disabled={files.length === 0}
+              disabled={unparsedCount === 0}
               className="h-8"
             >
               <Play className="mr-2 h-3.5 w-3.5" />
-              Scan
+              Scan {unparsedCount > 0 ? `(${unparsedCount})` : ''}
             </Button>
             <label className="flex items-center gap-2 text-xs font-medium cursor-pointer select-none">
               <Checkbox 
@@ -292,8 +339,13 @@ export function ReceiptScanInput({
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-2 py-1 truncate">
-                  {pf.file?.name || "Cloud Image"}
+                {pf.isParsed && (
+                  <div className="absolute top-1.5 left-1.5 bg-background/90 text-primary rounded-full p-0.5 shadow-sm border border-primary/20" title="Berhasil diparsing">
+                    <CheckCircle className="h-4 w-4" />
+                  </div>
+                )}
+                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-2 py-1 truncate flex justify-between">
+                  <span>{pf.name}</span>
                 </div>
               </div>
             ))}

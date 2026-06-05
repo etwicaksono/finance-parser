@@ -10,6 +10,9 @@
  * This applies all pending migrations from src/db/migrations/ to the database.
  */
 
+import { config } from "dotenv";
+config({ path: ".env" });
+
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";

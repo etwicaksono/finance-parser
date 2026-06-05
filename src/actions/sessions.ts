@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { sessions } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { TransactionRow } from "@/types";
+import { TransactionRow, SessionImage } from "@/types";
 
 export async function getSessions() {
   try {
@@ -37,7 +37,7 @@ export async function getSessionById(id: string) {
   }
 }
 
-export async function createSession(name: string, data: TransactionRow[] = [], images: string[] = [], metadata: any = {}) {
+export async function createSession(name: string, data: TransactionRow[] = [], images: (string | SessionImage)[] = [], metadata: any = {}) {
   try {
     const result = await db.insert(sessions).values({
       name,
@@ -52,7 +52,7 @@ export async function createSession(name: string, data: TransactionRow[] = [], i
   }
 }
 
-export async function updateSession(id: string, updates: { name?: string; data?: TransactionRow[]; images?: string[]; metadata?: any }) {
+export async function updateSession(id: string, updates: { name?: string; data?: TransactionRow[]; images?: (string | SessionImage)[]; metadata?: any }) {
   try {
     const result = await db.update(sessions)
       .set(updates)
@@ -74,7 +74,10 @@ export async function deleteSession(id: string) {
     if (session.images && Array.isArray(session.images)) {
       const { deleteImageFromCloudinary } = await import("@/actions/cloudinary");
       await Promise.all(
-        (session.images as string[]).map(url => deleteImageFromCloudinary(url))
+        (session.images as (string | SessionImage)[]).map(img => {
+          const url = typeof img === 'string' ? img : img.url;
+          return deleteImageFromCloudinary(url);
+        })
       );
     }
 
