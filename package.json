@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:migrate && next build",
+    "build": "npm run db:push && next build",
     "start": "next start",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
