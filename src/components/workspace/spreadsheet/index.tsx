@@ -2,21 +2,14 @@
 
 import * as React from "react";
 import {
-  ColumnDef,
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
   SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, AlertTriangle, Plus, Trash2, Check, Trash, ClipboardPaste, ArrowUp, ArrowDown, ArrowUpDown, CalendarCheck, ArrowRightLeft } from "lucide-react";
+import { Copy } from "lucide-react";
 import Swal from "sweetalert2";
-
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 import {
   Table,
@@ -27,13 +20,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getCategorySign } from "@/features/validation/category-sign";
 import { CategoryOption, AccountOption, TransactionRow } from "@/types";
-import { CategoryDropdown } from "./category-dropdown";
-import { AccountDropdown } from "./account-dropdown";
-import { FloatingEditor } from "./floating-editor";
+
+import { CategoryDropdown } from "../category-dropdown";
+import { AccountDropdown } from "../account-dropdown";
+import { FloatingEditor } from "../floating-editor";
+
+import { getColumns } from "./columns";
+import { SpreadsheetContextMenu } from "./context-menu";
+import { useSpreadsheetSelection } from "./hooks/use-spreadsheet-selection";
+import { CellPos } from "./types";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
@@ -49,14 +47,21 @@ interface SpreadsheetTableProps {
   emptyMessage?: string;
 }
 
-interface CellPos {
-  rowIndex: number;
-  colIndex: number;
-}
-
 const RECENT_ACCOUNTS: string[] = [];
 
-export function SpreadsheetTable({ data, categories, accounts, contraKeywords = [], viewMode = "raw", onDataChange, onEditGroupedItems, onCategoryChange, onCopyRows, onResolveDuplicate, emptyMessage = "No data available." }: SpreadsheetTableProps) {
+export function SpreadsheetTable({
+  data,
+  categories,
+  accounts,
+  contraKeywords = [],
+  viewMode = "raw",
+  onDataChange,
+  onEditGroupedItems,
+  onCategoryChange,
+  onCopyRows,
+  onResolveDuplicate,
+  emptyMessage = "No data available.",
+}: SpreadsheetTableProps) {
   const tableId = React.useId().replace(/:/g, "");
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
@@ -64,9 +69,10 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
   const [rowSelection, setRowSelection] = React.useState({});
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [includeHeader, setIncludeHeader] = React.useState(true);
+  const [copyFlash, setCopyFlash] = React.useState(false);
 
   const insertRowBelow = React.useCallback((index: number) => {
-    setTableData(prev => {
+    setTableData((prev) => {
       const newData = [...prev];
       const sourceRow = newData[index];
       const newRow: TransactionRow = {
@@ -85,7 +91,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
   }, [onDataChange]);
 
   const deleteRow = React.useCallback((index: number) => {
-    setTableData(prev => {
+    setTableData((prev) => {
       const newData = [...prev];
       newData.splice(index, 1);
       onDataChange?.(newData);
@@ -93,15 +99,50 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
     });
   }, [onDataChange]);
 
-  // Cell range selection (like Google Sheets)
-  const [selectionAnchor, setSelectionAnchor] = React.useState<CellPos | null>(null);
-  const [selectionFocus, setSelectionFocus] = React.useState<CellPos | null>(null);
-  const [copyFlash, setCopyFlash] = React.useState(false);
+  const columns = React.useMemo(
+    () =>
+      getColumns({
+        categories,
+        accounts,
+        viewMode,
+        insertRowBelow,
+        deleteRow,
+        onEditGroupedItems,
+        onResolveDuplicate,
+      }),
+    [categories, accounts, viewMode, insertRowBelow, deleteRow, onEditGroupedItems, onResolveDuplicate]
+  );
+
+  const table = useReactTable({
+    data: tableData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    enableSortingRemoval: true,
+    state: { rowSelection, sorting },
+  });
+
+  const {
+    selectionAnchor,
+    setSelectionAnchor,
+    selectionFocus,
+    setSelectionFocus,
+    multiSelections,
+    setMultiSelections,
+    selectionRange,
+    isCellSelected,
+    selectionStats,
+    isAnySingleCellSelected,
+    selectionLabel,
+  } = useSpreadsheetSelection(tableData, columns);
+
   const isDragging = React.useRef(false);
   const isKeyboardNavigating = React.useRef(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const autoScrollInterval = React.useRef<NodeJS.Timeout | null>(null);
-  const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number, rowIndex: number, colIndex: number } | null>(null);
+  const [contextMenu, setContextMenu] = React.useState<{ x: number; y: number; rowIndex: number; colIndex: number } | null>(null);
 
   React.useEffect(() => {
     const handleClickOutside = () => setContextMenu(null);
@@ -189,31 +230,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
       window.removeEventListener("mouseup", stopDrag);
       if (autoScrollInterval.current) clearInterval(autoScrollInterval.current);
     };
-  }, []);
-
-  // Compute selection rectangle
-  const selectionRange = React.useMemo(() => {
-    if (!selectionAnchor || !selectionFocus) return null;
-    return {
-      minRow: Math.min(selectionAnchor.rowIndex, selectionFocus.rowIndex),
-      maxRow: Math.max(selectionAnchor.rowIndex, selectionFocus.rowIndex),
-      minCol: Math.min(selectionAnchor.colIndex, selectionFocus.colIndex),
-      maxCol: Math.max(selectionAnchor.colIndex, selectionFocus.colIndex),
-    };
-  }, [selectionAnchor, selectionFocus]);
-
-  const isCellSelected = React.useCallback(
-    (rowIndex: number, colIndex: number) => {
-      if (!selectionRange) return false;
-      return (
-        rowIndex >= selectionRange.minRow &&
-        rowIndex <= selectionRange.maxRow &&
-        colIndex >= selectionRange.minCol &&
-        colIndex <= selectionRange.maxCol
-      );
-    },
-    [selectionRange]
-  );
+  }, [setSelectionFocus]);
 
   const getCellValue = React.useCallback(
     (row: TransactionRow, colKey: string): string => {
@@ -225,221 +242,24 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
     [categories, accounts]
   );
 
-  const columns = React.useMemo<ColumnDef<TransactionRow>[]>(
-    () => [
-      {
-        id: "select",
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <div className="flex h-full w-full items-center justify-center px-2">
-            <Checkbox
-              checked={row.getIsSelected()}
-              onCheckedChange={(value) => row.toggleSelected(!!value)}
-              aria-label="Select row"
-            />
-          </div>
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
-      {
-        accessorKey: "date",
-        header: ({ column }) => {
-          const isSorted = column.getIsSorted();
-          return (
-            <Button
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                column.toggleSorting(isSorted === "asc");
-              }}
-              className="flex items-center p-0 h-10 w-full justify-start rounded-none hover:bg-transparent px-2 -mx-2"
-            >
-              Date
-              {isSorted === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : isSorted === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
-              )}
-            </Button>
-          );
-        },
-        cell: (info) => {
-          const row = info.row.original;
-          return (
-            <div className="flex items-center gap-2">
-              <span className={row.isDateAmbiguous ? "font-bold text-yellow-600 dark:text-yellow-500" : ""}>
-                {info.getValue() as string}
-              </span>
-              {row.isDateAmbiguous && (
-                <span title="Ambiguous Date Format. Right click to swap Day and Month.">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
-                </span>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "accountId",
-        header: "Account",
-        cell: (info) => {
-          const val = info.getValue() as string;
-          return accounts.find((a) => a.id === val)?.name || "-";
-        },
-      },
-      {
-        accessorKey: "categoryId",
-        header: "Category",
-        cell: (info) => {
-          const row = info.row.original;
-          const val = info.getValue() as string;
-          return categories.find((c) => c.id === val)?.name || "-";
-        },
-      },
-      {
-        accessorKey: "amount",
-        header: "Amount",
-        cell: (info) => {
-          const val = info.getValue() as number | null;
-          return val !== null ? val.toLocaleString("id-ID") : "";
-        },
-      },
-      {
-        accessorKey: "item",
-        header: "Item",
-        cell: (info) => {
-          const row = info.row.original;
-          const isDup = row.isDuplicate;
-          return (
-            <div className="flex items-center gap-2">
-              <span className={viewMode === "grouped" ? "text-blue-600 hover:underline cursor-pointer" : ""} onClick={() => {
-                if (viewMode === "grouped" && onEditGroupedItems) {
-                  onEditGroupedItems(row);
-                }
-              }}>
-                {info.getValue() as string}
-              </span>
-              {isDup && (
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <button className="flex items-center justify-center p-1 rounded hover:bg-muted transition-colors text-destructive" title="Resolve possible duplicate">
-                        <AlertTriangle className="h-4 w-4" />
-                      </button>
-                    }
-                  />
-                  <PopoverContent className="w-56 p-2" align="start">
-                    <div className="flex flex-col space-y-2">
-                      <span className="text-sm font-medium px-2 py-1">Handle Duplicate</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="justify-start w-full text-green-600 hover:text-green-700 hover:bg-green-50"
-                        onClick={() => onResolveDuplicate?.(info.row.index, "keep")}
-                      >
-                        <Check className="h-4 w-4 mr-2" /> Keep as Multiple
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="justify-start w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => onResolveDuplicate?.(info.row.index, "remove")}
-                      >
-                        <Trash className="h-4 w-4 mr-2" /> Remove Item
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "notes",
-        header: "Notes",
-        cell: (info) => info.getValue() || "",
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <div className="flex h-full w-full items-center justify-center gap-2 px-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-primary/20"
-              onClick={() => insertRowBelow(row.index)}
-              title="Add row below"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/20"
-              onClick={() => deleteRow(row.index)}
-              title="Delete row"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
-    ],
-    [categories, accounts, insertRowBelow, deleteRow]
-  );
-
-  const table = useReactTable({
-    data: tableData,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onRowSelectionChange: setRowSelection,
-    onSortingChange: setSorting,
-    enableSortingRemoval: true,
-    state: { rowSelection, sorting },
-  });
-
-  // Calculate sum for selected numeric cells (Google Sheets style)
-  const selectionStats = React.useMemo(() => {
-    if (!selectionRange) return null;
-    const { minRow, maxRow, minCol, maxCol } = selectionRange;
-    
-    let sum = 0;
-    let count = 0;
-    for (let r = minRow; r <= maxRow; r++) {
-      for (let c = minCol; c <= maxCol; c++) {
-         const colDef = columns[c];
-         const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
-         if (key === "amount") {
-            const val = tableData[r]?.amount;
-            if (typeof val === 'number') {
-              sum += val;
-              count++;
-            }
-         }
-      }
-    }
-    
-    if (count <= 1) return null;
-    return { sum, count };
-  }, [selectionRange, tableData, columns]);
-
   // Copy selection range as TSV
   const copySelectionToClipboard = React.useCallback(() => {
-    if (!selectionRange) return;
+    if (!selectionRange && multiSelections.length === 0) return;
+
+    const ranges = [...multiSelections];
+    if (selectionRange) ranges.push(selectionRange);
+
+    let minR = Infinity;
+    let maxR = -Infinity;
+    let minC = Infinity;
+    let maxC = -Infinity;
+    
+    for (const r of ranges) {
+      minR = Math.min(minR, r.minRow);
+      maxR = Math.max(maxR, r.maxRow);
+      minC = Math.min(minC, r.minCol);
+      maxC = Math.max(maxC, r.maxCol);
+    }
 
     const rows = table.getRowModel().rows;
     const sanitize = (s: string) => {
@@ -451,12 +271,30 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
 
     const tsv: string[] = [];
     const copiedOriginals: TransactionRow[] = [];
-    for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
+    
+    const checkIsCellSelected = (rowIndex: number, colIndex: number) => {
+      return ranges.some(range => 
+        rowIndex >= range.minRow &&
+        rowIndex <= range.maxRow &&
+        colIndex >= range.minCol &&
+        colIndex <= range.maxCol
+      );
+    };
+
+    for (let r = minR; r <= maxR; r++) {
       const row = rows[r];
       if (!row) continue;
-      copiedOriginals.push(row.original);
+      
+      let hasSelectedCellInRow = false;
       const rowValues: string[] = [];
-      for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
+      
+      for (let c = minC; c <= maxC; c++) {
+        if (!checkIsCellSelected(r, c)) {
+           rowValues.push("");
+           continue;
+        }
+        hasSelectedCellInRow = true;
+
         const colDef = columns[c];
         const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
         if (key === "notes") continue;
@@ -466,7 +304,10 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
         }
         rowValues.push(sanitize(getCellValue(row.original, key)));
       }
-      tsv.push(rowValues.join("\t"));
+      if (hasSelectedCellInRow) {
+        copiedOriginals.push(row.original);
+        tsv.push(rowValues.join("\t"));
+      }
     }
 
     navigator.clipboard.writeText(tsv.join("\n")).then(() => {
@@ -477,7 +318,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
         onCopyRows(copiedOriginals);
       }
     });
-  }, [selectionRange, table, columns, getCellValue, onCopyRows]);
+  }, [selectionRange, multiSelections, table, columns, getCellValue, onCopyRows]);
 
   // Copy All / Copy Selected Rows button
   const handleCopyRows = React.useCallback(() => {
@@ -553,64 +394,67 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
     [columns, tableData, viewMode, onEditGroupedItems]
   );
 
-  const applyCellUpdate = React.useCallback((row: TransactionRow, key: string, valToSave: string) => {
-    if (key === "amount") {
-      const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
-      (row as any)[key] = isNaN(parsed) ? null : parsed;
-    } else if (key === "categoryId") {
-      const matched = categories.find(c => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
-      const oldVal = (row as any)[key];
-      const newVal = matched ? matched.id : null;
-      (row as any)[key] = newVal;
-      
-      if (oldVal !== newVal && newVal) {
-        onCategoryChange?.(row.id as string, row.item as string, newVal);
-      }
-      
-      // If category is manually edited, auto-adjust the amount sign
-      if (typeof row.amount === "number") {
-        const catName = categories.find((c) => c.id === newVal)?.name;
-        if (catName) {
-          const sign = getCategorySign(catName);
-          const isContraItem = contraKeywords.some(kw => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
-          
-          if (sign === "income") row.amount = Math.abs(row.amount);
-          else if (sign === "expense") {
-            if (!(isContraItem && row.amount > 0)) {
-               row.amount = -Math.abs(row.amount);
+  const applyCellUpdate = React.useCallback(
+    (row: TransactionRow, key: string, valToSave: string) => {
+      if (key === "amount") {
+        const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
+        (row as any)[key] = isNaN(parsed) ? null : parsed;
+      } else if (key === "categoryId") {
+        const matched = categories.find((c) => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
+        const oldVal = (row as any)[key];
+        const newVal = matched ? matched.id : null;
+        (row as any)[key] = newVal;
+
+        if (oldVal !== newVal && newVal) {
+          onCategoryChange?.(row.id as string, row.item as string, newVal);
+        }
+
+        // If category is manually edited, auto-adjust the amount sign
+        if (typeof row.amount === "number") {
+          const catName = categories.find((c) => c.id === newVal)?.name;
+          if (catName) {
+            const sign = getCategorySign(catName);
+            const isContraItem = contraKeywords.some((kw) => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
+
+            if (sign === "income") row.amount = Math.abs(row.amount);
+            else if (sign === "expense") {
+              if (!(isContraItem && row.amount > 0)) {
+                row.amount = -Math.abs(row.amount);
+              }
             }
           }
         }
-      }
-    } else if (key === "accountId") {
-      const matched = accounts.find(c => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
-      (row as any)[key] = matched ? matched.id : null;
-    } else if (key === "item") {
-      (row as any)[key] = valToSave;
-      let sum = 0;
-      let hasPrice = false;
-      valToSave.split("\n").forEach((line: string) => {
-        const match = line.match(/=>\s*([\d\.]+)k?/i);
-        if (match && match[1]) {
-          hasPrice = true;
-          const val = parseFloat(match[1]);
-          const rawPrice = line.toLowerCase().includes("k") ? val * 1000 : val;
-          const isContraItem = contraKeywords.some(kw => line.toLowerCase().includes(kw.toLowerCase()));
-          if (isContraItem) {
-             sum -= rawPrice;
-          } else {
-             sum += rawPrice;
+      } else if (key === "accountId") {
+        const matched = accounts.find((c) => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
+        (row as any)[key] = matched ? matched.id : null;
+      } else if (key === "item") {
+        (row as any)[key] = valToSave;
+        let sum = 0;
+        let hasPrice = false;
+        valToSave.split("\n").forEach((line: string) => {
+          const match = line.match(/=>\s*([\d\.]+)k?/i);
+          if (match && match[1]) {
+            hasPrice = true;
+            const val = parseFloat(match[1]);
+            const rawPrice = line.toLowerCase().includes("k") ? val * 1000 : val;
+            const isContraItem = contraKeywords.some((kw) => line.toLowerCase().includes(kw.toLowerCase()));
+            if (isContraItem) {
+              sum -= rawPrice;
+            } else {
+              sum += rawPrice;
+            }
           }
+        });
+        if (hasPrice) {
+          const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
+          (row as any).amount = sum * currentSign;
         }
-      });
-      if (hasPrice) {
-        const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
-        (row as any).amount = sum * currentSign;
+      } else {
+        (row as any)[key] = valToSave;
       }
-    } else {
-      (row as any)[key] = valToSave;
-    }
-  }, [categories, accounts, onCategoryChange]);
+    },
+    [categories, accounts, onCategoryChange, contraKeywords]
+  );
 
   const saveEdit = React.useCallback(
     (rowIndex: number, colIndex: number, explicitValue?: string) => {
@@ -624,9 +468,9 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
         const origIndex = rowData ? rowData.index : rowIndex;
         const row = { ...newData[origIndex] } as TransactionRow;
         const valToSave = explicitValue !== undefined ? explicitValue : editValue;
-        
+
         applyCellUpdate(row, key, valToSave);
-        
+
         newData[origIndex] = row as TransactionRow;
         setTableData(newData);
         onDataChange?.(newData);
@@ -640,17 +484,24 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
   const handleCellMouseDown = (e: React.MouseEvent, rowIndex: number, colIndex: number, isSelectCol: boolean) => {
     if (isSelectCol) return;
     if (editingCell) return;
-    
+
     if (e.button === 2) return; // Let onContextMenu handle right clicks
 
     // Prevent text selection in the browser while dragging across cells
     e.preventDefault();
 
-    if (e.shiftKey && selectionAnchor) {
+    if (e.ctrlKey || e.metaKey) {
+      if (selectionRange) {
+        setMultiSelections((prev) => [...prev, selectionRange]);
+      }
+      setSelectionAnchor({ rowIndex, colIndex });
+      setSelectionFocus({ rowIndex, colIndex });
+    } else if (e.shiftKey && selectionAnchor) {
       // Extend current selection
       setSelectionFocus({ rowIndex, colIndex });
     } else {
       // Start new selection
+      setMultiSelections([]);
       setSelectionAnchor({ rowIndex, colIndex });
       setSelectionFocus({ rowIndex, colIndex });
     }
@@ -669,7 +520,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
     (clipboardText: string) => {
       if (editingCell) return;
 
-      const parsedRows = clipboardText.split(/\r?\n/).map(row => row.split("\t"));
+      const parsedRows = clipboardText.split(/\r?\n/).map((row) => row.split("\t"));
       const lastRow = parsedRows[parsedRows.length - 1];
       if (lastRow && lastRow.length === 1 && lastRow[0] === "") {
         parsedRows.pop();
@@ -678,117 +529,134 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
 
       let startRow = selectionAnchor?.rowIndex ?? 0;
       let startCol = selectionAnchor?.colIndex ?? 0;
-      
+
       const isSingleValuePaste = parsedRows.length === 1 && parsedRows[0]?.length === 1;
 
-      setTableData(prev => {
+      setTableData((prev) => {
         const newData = [...prev];
-        
+
         // Behavior 1: Pasting single value into a larger selected range (fill range)
-        if (isSingleValuePaste && selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol)) {
-           const val = parsedRows[0]?.[0] || "";
-           for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
-             const rowData = table.getRowModel().rows[r];
-             const origIndex = rowData ? rowData.index : r;
-             const row = { ...newData[origIndex] } as TransactionRow;
-             let rowChanged = false;
-             for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
-               const colDef = columns[c];
-               if (colDef && "accessorKey" in colDef) {
-                 const key = (colDef as any).accessorKey;
-                 if (key !== "select" && key !== "actions") {
-                   applyCellUpdate(row, key, val);
-                   rowChanged = true;
-                 }
-               }
-             }
-             if (rowChanged) newData[origIndex] = row;
-           }
-        } 
+        const ranges = [...multiSelections];
+        if (selectionRange) ranges.push(selectionRange);
+        const isMultiCellSelection = ranges.length > 1 || (selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol));
+
+        if (isSingleValuePaste && isMultiCellSelection) {
+          const val = parsedRows[0]?.[0] || "";
+          const processed = new Set<string>();
+          for (const range of ranges) {
+            for (let r = range.minRow; r <= range.maxRow; r++) {
+              const rowData = table.getRowModel().rows[r];
+              const origIndex = rowData ? rowData.index : r;
+              const row = { ...newData[origIndex] } as TransactionRow;
+              let rowChanged = false;
+              for (let c = range.minCol; c <= range.maxCol; c++) {
+                const keyStr = `${r},${c}`;
+                if (processed.has(keyStr)) continue;
+                processed.add(keyStr);
+
+                const colDef = columns[c];
+                if (colDef && "accessorKey" in colDef) {
+                  const key = (colDef as any).accessorKey;
+                  if (key !== "select" && key !== "actions") {
+                    applyCellUpdate(row, key, val);
+                    rowChanged = true;
+                  }
+                }
+              }
+              if (rowChanged) newData[origIndex] = row;
+            }
+          }
+        }
         // Behavior 2: Pasting standard multiline/multicol data starting at anchor
         else {
-           for (let r = 0; r < parsedRows.length; r++) {
-             const targetRow = startRow + r;
-             if (targetRow >= newData.length) {
-               // Optional: expand rows if needed
-               const sourceRow = newData[newData.length - 1];
-               newData.push({
-                 id: crypto.randomUUID(),
-                 date: sourceRow ? sourceRow.date : "",
-                 item: "",
-                 amount: null,
-                 categoryId: null,
-                 accountId: sourceRow ? sourceRow.accountId : null,
-                 notes: "",
-               });
-             }
-             
-             const rowData = table.getRowModel().rows[targetRow];
-             const origIndex = rowData ? rowData.index : newData.length - 1;
-             const row = { ...newData[origIndex] } as TransactionRow;
-             let rowChanged = false;
-             const currentRow = parsedRows[r];
-             if (!currentRow) continue;
-             
-             for (let c = 0; c < currentRow.length; c++) {
-               const targetCol = startCol + c;
-               if (targetCol >= columns.length) continue;
-               const colDef = columns[targetCol];
-               if (colDef && "accessorKey" in colDef) {
-                 const key = (colDef as any).accessorKey;
-                 if (key !== "select" && key !== "actions") {
-                   applyCellUpdate(row, key, currentRow[c] || "");
-                   rowChanged = true;
-                 }
-               }
-             }
-             if (rowChanged) newData[origIndex] = row;
-           }
+          for (let r = 0; r < parsedRows.length; r++) {
+            const targetRow = startRow + r;
+            if (targetRow >= newData.length) {
+              // Optional: expand rows if needed
+              const sourceRow = newData[newData.length - 1];
+              newData.push({
+                id: crypto.randomUUID(),
+                date: sourceRow ? sourceRow.date : "",
+                item: "",
+                amount: null,
+                categoryId: null,
+                accountId: sourceRow ? sourceRow.accountId : null,
+                notes: "",
+              });
+            }
+
+            const rowData = table.getRowModel().rows[targetRow];
+            const origIndex = rowData ? rowData.index : newData.length - 1;
+            const row = { ...newData[origIndex] } as TransactionRow;
+            let rowChanged = false;
+            const currentRow = parsedRows[r];
+            if (!currentRow) continue;
+
+            for (let c = 0; c < currentRow.length; c++) {
+              const targetCol = startCol + c;
+              if (targetCol >= columns.length) continue;
+              const colDef = columns[targetCol];
+              if (colDef && "accessorKey" in colDef) {
+                const key = (colDef as any).accessorKey;
+                if (key !== "select" && key !== "actions") {
+                  applyCellUpdate(row, key, currentRow[c] || "");
+                  rowChanged = true;
+                }
+              }
+            }
+            if (rowChanged) newData[origIndex] = row;
+          }
         }
-        
+
         onDataChange?.(newData);
         return newData;
       });
     },
-    [editingCell, selectionAnchor, selectionRange, columns, applyCellUpdate, onDataChange, table]
+    [editingCell, selectionAnchor, selectionRange, multiSelections, columns, applyCellUpdate, onDataChange, table]
   );
 
-  const handleCopyAction = React.useCallback((rIndex: number, cIndex: number) => {
-    const colDef = columns[cIndex];
-    const isSelectCol = colDef && colDef.id === "select";
-    const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
+  const handleCopyAction = React.useCallback(
+    (rIndex: number, cIndex: number) => {
+      const colDef = columns[cIndex];
+      const isSelectCol = colDef && colDef.id === "select";
+      const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
 
-    if (selectionRange) {
-      copySelectionToClipboard();
-    } else if (!isSelectCol) {
-      // No range selection — copy single focused cell
-      const row = tableData[rIndex];
-      if (row && key) {
-        navigator.clipboard.writeText(getCellValue(row, key)).then(() => {
-          setCopyFlash(true);
-          setTimeout(() => setCopyFlash(false), 600);
-        });
+      if (selectionRange || multiSelections.length > 0) {
+        copySelectionToClipboard();
+      } else if (!isSelectCol) {
+        // No range selection — copy single focused cell
+        const row = tableData[rIndex];
+        if (row && key) {
+          navigator.clipboard.writeText(getCellValue(row, key)).then(() => {
+            setCopyFlash(true);
+            setTimeout(() => setCopyFlash(false), 600);
+          });
+        }
       }
-    }
-  }, [selectionRange, columns, tableData, copySelectionToClipboard]);
+    },
+    [selectionRange, multiSelections, columns, tableData, copySelectionToClipboard, getCellValue]
+  );
 
   const handlePasteAction = React.useCallback(() => {
     if (!navigator.clipboard) {
       Swal.fire("Error", "Browser Anda tidak mendukung akses Clipboard otomatis. Silakan gunakan browser terbaru.", "error");
       return;
     }
-    navigator.clipboard.readText().then(text => {
-      if (text) {
-        try {
-          processPasteData(text);
-        } catch (err: any) {
-          Swal.fire("Paste Error", err.message, "error");
+    navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (text) {
+          try {
+            processPasteData(text);
+          } catch (err: any) {
+            Swal.fire("Paste Error", err.message, "error");
+          }
         }
-      }
-    }).catch(err => {
-      console.error("Failed to read clipboard:", err);
-      Swal.fire("Akses Ditolak", "Gagal membaca clipboard. Pastikan Anda mengizinkan akses clipboard saat muncul popup di browser.", "warning");
-    });
+      })
+      .catch((err) => {
+        console.error("Failed to read clipboard:", err);
+        Swal.fire("Akses Ditolak", "Gagal membaca clipboard. Pastikan Anda mengizinkan akses clipboard saat muncul popup di browser.", "warning");
+      });
   }, [processPasteData]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
@@ -836,28 +704,39 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
 
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      setTableData(prev => {
+      setTableData((prev) => {
         const newData = [...prev];
         let changed = false;
 
-        if (selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol)) {
-          for (let r = selectionRange.minRow; r <= selectionRange.maxRow; r++) {
-            const rowData = table.getRowModel().rows[r];
-            const origIndex = rowData ? rowData.index : r;
-            const row = { ...newData[origIndex] } as TransactionRow;
-            let rowChanged = false;
-            for (let c = selectionRange.minCol; c <= selectionRange.maxCol; c++) {
-              const colDef = columns[c];
-              if (colDef && "accessorKey" in colDef) {
-                const k = (colDef as any).accessorKey;
-                if (k !== "select" && k !== "actions") {
-                  applyCellUpdate(row, k, "");
-                  rowChanged = true;
+        const ranges = [...multiSelections];
+        if (selectionRange) ranges.push(selectionRange);
+        const isMultiCellSelection = ranges.length > 1 || (selectionRange && (selectionRange.minRow !== selectionRange.maxRow || selectionRange.minCol !== selectionRange.maxCol));
+
+        if (isMultiCellSelection) {
+          const processed = new Set<string>();
+          for (const range of ranges) {
+            for (let r = range.minRow; r <= range.maxRow; r++) {
+              const rowData = table.getRowModel().rows[r];
+              const origIndex = rowData ? rowData.index : r;
+              const row = { ...newData[origIndex] } as TransactionRow;
+              let rowChanged = false;
+              for (let c = range.minCol; c <= range.maxCol; c++) {
+                const keyStr = `${r},${c}`;
+                if (processed.has(keyStr)) continue;
+                processed.add(keyStr);
+
+                const colDef = columns[c];
+                if (colDef && "accessorKey" in colDef) {
+                  const k = (colDef as any).accessorKey;
+                  if (k !== "select" && k !== "actions") {
+                    applyCellUpdate(row, k, "");
+                    rowChanged = true;
+                  }
                 }
               }
+              if (rowChanged) newData[origIndex] = row;
+              changed = changed || rowChanged;
             }
-            if (rowChanged) newData[origIndex] = row;
-            changed = changed || rowChanged;
           }
         } else if (!isSelectCol) {
           if (key && key !== "select" && key !== "actions") {
@@ -878,18 +757,29 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
       return;
     }
 
-    if (e.key === "ArrowUp") { e.preventDefault(); nextRow = Math.max(0, rowIndex - 1); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); nextRow = Math.min(tableData.length - 1, rowIndex + 1); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); nextCol = Math.max(0, colIndex - 1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); nextCol = Math.min(columns.length - 1, colIndex + 1); }
-    else if (e.key === "Enter" && !isSelectCol) { e.preventDefault(); startEditing(rowIndex, colIndex); return; }
-    else if (e.key === " " && isSelectCol) { return; }
-    else if (e.key.toLowerCase() === "v" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      nextRow = Math.max(0, rowIndex - 1);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      nextCol = Math.max(0, colIndex - 1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextCol = Math.min(columns.length - 1, colIndex + 1);
+    } else if (e.key === "Enter" && !isSelectCol) {
+      e.preventDefault();
+      startEditing(rowIndex, colIndex);
+      return;
+    } else if (e.key === " " && isSelectCol) {
+      return;
+    } else if (e.key.toLowerCase() === "v" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handlePasteAction();
       return;
-    }
-    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown && !isSelectCol) {
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown && !isSelectCol) {
       startEditing(rowIndex, colIndex, e.key);
       e.preventDefault();
       return;
@@ -904,22 +794,13 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
         setSelectionFocus({ rowIndex: nextRow, colIndex: nextCol });
       } else {
         // Move selection anchor
+        setMultiSelections([]);
         setSelectionAnchor({ rowIndex: nextRow, colIndex: nextCol });
         setSelectionFocus({ rowIndex: nextRow, colIndex: nextCol });
       }
       focusCell(nextRow, nextCol);
     }
   };
-
-
-  const isAnySingleCellSelected = selectionAnchor &&
-    selectionFocus &&
-    selectionAnchor.rowIndex === selectionFocus.rowIndex &&
-    selectionAnchor.colIndex === selectionFocus.colIndex;
-
-  const selectionLabel = selectionRange && !isAnySingleCellSelected
-    ? `${(selectionRange.maxRow - selectionRange.minRow + 1)}R × ${(selectionRange.maxCol - selectionRange.minCol + 1)}C selected`
-    : null;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col bg-background">
@@ -932,12 +813,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
         </div>
         <div className="flex items-center gap-2">
           {selectionRange && !isAnySingleCellSelected && (
-            <Button
-              size="sm"
-              variant="default"
-              onClick={copySelectionToClipboard}
-              className={copyFlash ? "bg-green-600" : ""}
-            >
+            <Button size="sm" variant="default" onClick={copySelectionToClipboard} className={copyFlash ? "bg-green-600" : ""}>
               <Copy className="mr-2 h-4 w-4" />
               Copy Selection
             </Button>
@@ -955,7 +831,11 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
               Include header
             </label>
           </div>
-          <Button size="sm" variant="outline" onClick={handleCopyRows} disabled={tableData.length === 0}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCopyRows}
+            disabled={tableData.length === 0}
             className={copyFlash && (!selectionRange || isAnySingleCellSelected) ? "bg-green-600/10 border-green-600 text-green-600" : ""}
           >
             <Copy className="mr-2 h-4 w-4" />
@@ -978,6 +858,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
                       if (colDef?.id === "select") return;
                       const lastRow = tableData.length - 1;
                       if (lastRow < 0) return;
+                      setMultiSelections([]);
                       setSelectionAnchor({ rowIndex: 0, colIndex });
                       setSelectionFocus({ rowIndex: lastRow, colIndex });
                       focusCell(0, colIndex);
@@ -992,11 +873,7 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row, rowIndex) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  className="hover:bg-muted/30"
-                >
+                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="hover:bg-muted/30">
                   {row.getVisibleCells().map((cell, colIndex) => {
                     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
                     const isDropdown = cell.column.id === "categoryId" || cell.column.id === "accountId";
@@ -1021,11 +898,19 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
                         onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex, isSelectCol)}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          const inSelectionRange = selectionRange && 
-                            rowIndex >= selectionRange.minRow && rowIndex <= selectionRange.maxRow &&
-                            colIndex >= selectionRange.minCol && colIndex <= selectionRange.maxCol;
+                          const inSelectionRange =
+                            (selectionRange &&
+                              rowIndex >= selectionRange.minRow &&
+                              rowIndex <= selectionRange.maxRow &&
+                              colIndex >= selectionRange.minCol &&
+                              colIndex <= selectionRange.maxCol) ||
+                            multiSelections.some(
+                              (range) =>
+                                rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
+                            );
 
                           if (!inSelectionRange) {
+                            setMultiSelections([]);
                             setSelectionAnchor({ rowIndex, colIndex });
                             setSelectionFocus({ rowIndex, colIndex });
                             focusCell(rowIndex, colIndex);
@@ -1035,11 +920,19 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
                         }}
                         onFocus={() => {
                           if (!isDragging.current && !editingCell && !isKeyboardNavigating.current) {
-                            const inSelectionRange = selectionRange && 
-                              rowIndex >= selectionRange.minRow && rowIndex <= selectionRange.maxRow &&
-                              colIndex >= selectionRange.minCol && colIndex <= selectionRange.maxCol;
+                            const inSelectionRange =
+                              (selectionRange &&
+                                rowIndex >= selectionRange.minRow &&
+                                rowIndex <= selectionRange.maxRow &&
+                                colIndex >= selectionRange.minCol &&
+                                colIndex <= selectionRange.maxCol) ||
+                              multiSelections.some(
+                                (range) =>
+                                  rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
+                              );
 
                             if (!inSelectionRange) {
+                              setMultiSelections([]);
                               setSelectionAnchor({ rowIndex, colIndex });
                               setSelectionFocus({ rowIndex, colIndex });
                             }
@@ -1102,7 +995,9 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
                         ) : (
                           <>
                             <div
-                              className={`min-h-[40px] whitespace-pre-wrap ${isSelectCol ? "" : "px-2 py-2 cursor-default select-none"} ${isEditing ? "opacity-0" : ""}`}
+                              className={`min-h-[40px] whitespace-pre-wrap ${isSelectCol ? "" : "px-2 py-2 cursor-default select-none"} ${
+                                isEditing ? "opacity-0" : ""
+                              }`}
                               onDoubleClick={() => {
                                 if (!isSelectCol) startEditing(rowIndex, colIndex);
                               }}
@@ -1150,101 +1045,19 @@ export function SpreadsheetTable({ data, categories, accounts, contraKeywords = 
           <span className="text-primary-foreground/70 text-xs">({selectionStats.count} cells)</span>
         </div>
       )}
-      {contextMenu && (
-        <div 
-          className="fixed z-50 min-w-40 bg-white dark:bg-zinc-800 border dark:border-zinc-700 shadow-md rounded-md py-1 text-sm text-zinc-800 dark:text-zinc-200"
-          style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 160) }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {(() => {
-             const colDef = columns[contextMenu.colIndex];
-             const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
-             const row = tableData[contextMenu.rowIndex];
-             const isDateColumn = key === "date";
-             const isDateWarning = isDateColumn && row?.isDateAmbiguous;
-             return (
-               <>
-                 {isDateWarning && (
-                   <button 
-                     className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2 text-green-600"
-                     onClick={() => {
-                       setTableData(prev => {
-                         const rMin = selectionRange ? selectionRange.minRow : contextMenu.rowIndex;
-                         const rMax = selectionRange ? selectionRange.maxRow : contextMenu.rowIndex;
-                         const newData = [...prev];
-                         for (let r = rMin; r <= rMax; r++) {
-                           const rowData = table.getRowModel().rows[r];
-                           const origIndex = rowData ? rowData.index : r;
-                           newData[origIndex] = { ...newData[origIndex]!, isDateAmbiguous: false };
-                         }
-                         onDataChange?.(newData);
-                         return newData;
-                       });
-                       setContextMenu(null);
-                     }}
-                   >
-                     <CalendarCheck className="w-4 h-4" /> Confirm Date
-                   </button>
-                 )}
-                 {isDateColumn && (
-                   <button 
-                     className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2 text-blue-600 dark:text-blue-400"
-                     onClick={() => {
-                       setTableData(prev => {
-                         const rMin = selectionRange ? selectionRange.minRow : contextMenu.rowIndex;
-                         const rMax = selectionRange ? selectionRange.maxRow : contextMenu.rowIndex;
-                         const newData = [...prev];
-                         for (let r = rMin; r <= rMax; r++) {
-                           const rowData = table.getRowModel().rows[r];
-                           const origIndex = rowData ? rowData.index : r;
-                           const currDate = newData[origIndex]?.date;
-                           if (currDate) {
-                             const parts = currDate.split("-");
-                             if (parts.length === 3) {
-                               const y = parts[0];
-                               const m = parts[1];
-                               const d = parts[2];
-                               newData[origIndex] = { 
-                                 ...newData[origIndex]!, 
-                                 date: `${y}-${d}-${m}`,
-                                 isDateAmbiguous: false 
-                               };
-                             }
-                           }
-                         }
-                         onDataChange?.(newData);
-                         return newData;
-                       });
-                       setContextMenu(null);
-                     }}
-                   >
-                     <ArrowRightLeft className="w-4 h-4" /> Swap Day & Month
-                   </button>
-                 )}
-                 {isDateColumn && <div className="h-px bg-border my-1 mx-2" />}
-                 <button 
-                   className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
-                   onClick={() => {
-                     handleCopyAction(contextMenu.rowIndex, contextMenu.colIndex);
-                     setContextMenu(null);
-                   }}
-                 >
-                   <Copy className="w-4 h-4" /> Copy
-                 </button>
-                 <button 
-                   className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
-                   onClick={() => {
-                     handlePasteAction();
-                     setContextMenu(null);
-                   }}
-                 >
-                   <ClipboardPaste className="w-4 h-4" /> Paste
-                 </button>
-               </>
-             );
-          })()}
-        </div>
-      )}
+      <SpreadsheetContextMenu
+        contextMenu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        columns={columns}
+        tableData={tableData}
+        setTableData={setTableData}
+        table={table}
+        selectionRange={selectionRange}
+        multiSelections={multiSelections}
+        onDataChange={onDataChange}
+        handleCopyAction={handleCopyAction}
+        handlePasteAction={handlePasteAction}
+      />
     </div>
   );
 }

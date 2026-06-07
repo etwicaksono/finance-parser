@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { MainWorkspace } from "@/components/layout/main-workspace";
 import { WhatsAppInput } from "@/components/workspace/whatsapp-input";
-import { SpreadsheetTable } from "@/components/workspace/spreadsheet-table";
+import { SpreadsheetTable } from "@/components/workspace/spreadsheet";
 import { TransactionRow, CategoryOption, AccountOption, SessionImage } from "@/types";
 import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";

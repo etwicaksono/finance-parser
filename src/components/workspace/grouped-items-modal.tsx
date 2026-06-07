@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TransactionRow, CategoryOption, AccountOption } from "@/types";
-import { SpreadsheetTable } from "./spreadsheet-table";
+import { SpreadsheetTable } from "./spreadsheet";
 import { Button } from "@/components/ui/button";
 
 interface GroupedItemsModalProps {
