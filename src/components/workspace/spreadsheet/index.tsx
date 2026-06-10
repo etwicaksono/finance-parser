@@ -786,6 +786,9 @@ export function SpreadsheetTable({
       nextCol = Math.min(columns.length - 1, colIndex + 1);
     } else if (e.key === "Enter" && !isSelectCol) {
       e.preventDefault();
+      nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+    } else if (e.key === "F2" && !isSelectCol) {
+      e.preventDefault();
       startEditing(rowIndex, colIndex);
       return;
     } else if (e.key === " " && isSelectCol) {
@@ -962,7 +965,10 @@ export function SpreadsheetTable({
                             initialSearch={accounts.some(a => a.id === editValue) ? "" : editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
-                              focusCell(rowIndex, colIndex);
+                              const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                              setSelectionAnchor({ rowIndex: nextRow, colIndex });
+                              setSelectionFocus({ rowIndex: nextRow, colIndex });
+                              focusCell(nextRow, colIndex);
                             }}
                             onClose={() => {
                               setEditingCell(null);
@@ -976,7 +982,10 @@ export function SpreadsheetTable({
                             initialSearch={categories.some(c => c.id === editValue) ? "" : editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
-                              focusCell(rowIndex, colIndex);
+                              const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                              setSelectionAnchor({ rowIndex: nextRow, colIndex });
+                              setSelectionFocus({ rowIndex: nextRow, colIndex });
+                              focusCell(nextRow, colIndex);
                             }}
                             onClose={() => {
                               setEditingCell(null);
