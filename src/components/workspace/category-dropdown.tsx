@@ -25,6 +25,7 @@ interface Option {
 interface CategoryDropdownProps {
   options: Option[];
   value: string | null;
+  initialSearch?: string;
   onSelect: (value: string | null) => void;
   onClose: () => void;
 }
@@ -32,10 +33,12 @@ interface CategoryDropdownProps {
 export function CategoryDropdown({
   options,
   value,
+  initialSearch = "",
   onSelect,
   onClose,
 }: CategoryDropdownProps) {
   const [open, setOpen] = React.useState(true);
+  const [search, setSearch] = React.useState(initialSearch);
 
   // Focus the popover trigger on mount? No, shadcn popover auto-focuses the input inside.
 
@@ -53,7 +56,7 @@ export function CategoryDropdown({
       <PopoverTrigger className="h-full w-full bg-transparent absolute inset-0 z-0 opacity-0" />
       <PopoverContent className="w-[200px] p-0" align="start" sideOffset={0}>
         <Command>
-          <CommandInput placeholder="Search..." autoFocus />
+          <CommandInput placeholder="Search..." autoFocus value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>No option found.</CommandEmpty>
             <CommandGroup>

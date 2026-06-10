@@ -7,6 +7,7 @@ interface FloatingEditorProps {
   onSave: (val: string) => void;
   onCancel: () => void;
   onNextRow: (val: string) => void;
+  onNextCol?: (val: string) => void;
 }
 
 export function FloatingEditor({
@@ -15,6 +16,7 @@ export function FloatingEditor({
   onSave,
   onCancel,
   onNextRow,
+  onNextCol,
 }: FloatingEditorProps) {
   const [value, setValue] = useState(initialValue);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -82,6 +84,7 @@ export function FloatingEditor({
     handleInput();
   }, [value, rect]);
 
+
   if (!rect) return null;
 
   return document.body ? ReactDOM.createPortal(
@@ -95,8 +98,15 @@ export function FloatingEditor({
       }}
     >
       <textarea
-        ref={textareaRef}
-        autoFocus
+        ref={(el) => {
+          textareaRef.current = el;
+          if (el && !el.dataset.cursorFixed) {
+            el.dataset.cursorFixed = "true";
+            el.focus();
+            const len = el.value.length;
+            el.setSelectionRange(len, len);
+          }
+        }}
         className="w-full h-full resize-none bg-transparent px-2 py-2 outline-none whitespace-pre-wrap"
         style={{ minHeight: rect.height }}
         value={value}
@@ -119,6 +129,13 @@ export function FloatingEditor({
             } else {
               e.preventDefault();
               onNextRow(value);
+            }
+          } else if (e.key === "Tab") {
+            e.preventDefault();
+            if (onNextCol) {
+              onNextCol(value);
+            } else {
+              onSave(value);
             }
           } else if (e.key === "Escape") {
             e.preventDefault();

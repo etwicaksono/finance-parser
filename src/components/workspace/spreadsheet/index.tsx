@@ -398,7 +398,22 @@ export function SpreadsheetTable({
     (row: TransactionRow, key: string, valToSave: string) => {
       if (key === "amount") {
         const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
-        (row as any)[key] = isNaN(parsed) ? null : parsed;
+        let newAmount = isNaN(parsed) ? null : parsed;
+        
+        if (newAmount !== null && row.categoryId) {
+          const catName = categories.find((c) => c.id === row.categoryId)?.name;
+          if (catName) {
+            const sign = getCategorySign(catName);
+            const isContraItem = contraKeywords.some((kw) => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
+            if (sign === "income") newAmount = Math.abs(newAmount);
+            else if (sign === "expense") {
+              if (!(isContraItem && newAmount > 0)) {
+                newAmount = -Math.abs(newAmount);
+              }
+            }
+          }
+        }
+        (row as any)[key] = newAmount;
       } else if (key === "categoryId") {
         const matched = categories.find((c) => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
         const oldVal = (row as any)[key];
@@ -779,7 +794,7 @@ export function SpreadsheetTable({
       e.preventDefault();
       handlePasteAction();
       return;
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isDropdown && !isSelectCol) {
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !isSelectCol) {
       startEditing(rowIndex, colIndex, e.key);
       e.preventDefault();
       return;
@@ -943,7 +958,8 @@ export function SpreadsheetTable({
                           <AccountDropdown
                             options={accounts}
                             recentIds={RECENT_ACCOUNTS}
-                            value={editValue}
+                            value={accounts.some(a => a.id === editValue) ? editValue : null}
+                            initialSearch={accounts.some(a => a.id === editValue) ? "" : editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
                               focusCell(rowIndex, colIndex);
@@ -956,7 +972,8 @@ export function SpreadsheetTable({
                         ) : isEditing && cell.column.id === "categoryId" ? (
                           <CategoryDropdown
                             options={categories}
-                            value={editValue}
+                            value={categories.some(c => c.id === editValue) ? editValue : null}
+                            initialSearch={categories.some(c => c.id === editValue) ? "" : editValue}
                             onSelect={(newVal) => {
                               saveEdit(rowIndex, colIndex, newVal || "");
                               focusCell(rowIndex, colIndex);
@@ -1016,7 +1033,16 @@ export function SpreadsheetTable({
                                 onNextRow={(val) => {
                                   saveEdit(rowIndex, colIndex, val);
                                   const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                                  setSelectionAnchor({ rowIndex: nextRow, colIndex });
+                                  setSelectionFocus({ rowIndex: nextRow, colIndex });
                                   focusCell(nextRow, colIndex);
+                                }}
+                                onNextCol={(val) => {
+                                  saveEdit(rowIndex, colIndex, val);
+                                  const nextCol = Math.min(columns.length - 1, colIndex + 1);
+                                  setSelectionAnchor({ rowIndex, colIndex: nextCol });
+                                  setSelectionFocus({ rowIndex, colIndex: nextCol });
+                                  focusCell(rowIndex, nextCol);
                                 }}
                               />
                             )}

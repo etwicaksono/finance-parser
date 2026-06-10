@@ -1,4 +1,4 @@
-.PHONY: dev build start install db-generate db-migrate db-push db-studio lint format
+.PHONY: dev build start install db-generate db-migrate db-push db-studio lint format import-history
 
 # Start development server
 dev:
@@ -39,3 +39,7 @@ lint:
 # Format code
 format:
 	npm run format
+
+# Import legacy history
+import-history:
+	npx tsx scripts/import-history.ts

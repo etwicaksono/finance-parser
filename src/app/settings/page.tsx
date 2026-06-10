@@ -3,6 +3,8 @@ import { getAccounts } from "@/actions/accounts";
 import { SettingsClient } from "@/components/settings/settings-client";
 import { CategoryOption, AccountOption } from "@/types";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SettingsPage() {
   const [categoriesRes, accountsRes] = await Promise.all([
     getCategories(),

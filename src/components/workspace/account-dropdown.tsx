@@ -27,6 +27,7 @@ interface AccountDropdownProps {
   options: Option[];
   recentIds?: string[];
   value: string | null;
+  initialSearch?: string;
   onSelect: (value: string | null) => void;
   onClose: () => void;
 }
@@ -35,10 +36,12 @@ export function AccountDropdown({
   options,
   recentIds = [],
   value,
+  initialSearch = "",
   onSelect,
   onClose,
 }: AccountDropdownProps) {
   const [open, setOpen] = React.useState(true);
+  const [search, setSearch] = React.useState(initialSearch);
 
   // Derive recent vs all options
   const recentOptions = options.filter((o) => recentIds.includes(o.id));
@@ -58,7 +61,7 @@ export function AccountDropdown({
       <PopoverTrigger className="h-full w-full bg-transparent absolute inset-0 z-0 opacity-0" />
       <PopoverContent className="w-[200px] p-0" align="start" sideOffset={0}>
         <Command>
-          <CommandInput placeholder="Search accounts..." autoFocus />
+          <CommandInput placeholder="Search accounts..." autoFocus value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>No account found.</CommandEmpty>
             
