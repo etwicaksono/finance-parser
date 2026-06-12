@@ -44,7 +44,7 @@ export interface TransactionRow {
   // Tracking original rows when grouped
   rawItemIds?: string[];
   // Data Source Tracking
-  source?: "chat" | "scan" | "manual";
+  source?: "chat" | "scan" | "manual" | "manual-input";
   receiptName?: string;
 }
 

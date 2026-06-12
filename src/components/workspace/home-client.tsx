@@ -695,6 +695,7 @@ export function HomeClient({
                   <option value="chat" className="bg-background">WhatsApp Chat</option>
                   <option value="scan" className="bg-background">Scan Nota</option>
                   <option value="manual" className="bg-background">Manual AI</option>
+                  <option value="manual-input" className="bg-background">Manual Input</option>
                 </select>
 
                 {uniqueReceipts.length > 0 && (

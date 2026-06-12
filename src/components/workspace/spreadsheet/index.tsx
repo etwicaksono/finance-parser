@@ -95,7 +95,8 @@ export function SpreadsheetTable({
         categoryId: null,
         accountId: lastRow ? lastRow.accountId : null,
         notes: "",
-        source: "manual",
+        isDuplicate: false,
+        source: "manual-input",
       };
       
       const newData = [...tableData, newRow];
@@ -1095,9 +1096,7 @@ export function SpreadsheetTable({
                         ) : (
                           <>
                             <div
-                              className={`min-h-[40px] whitespace-pre-wrap ${isSelectCol ? "" : "px-2 py-2 cursor-default select-none"} ${
-                                isEditing ? "opacity-0" : ""
-                              }`}
+                              className={isSelectCol ? "absolute inset-0 flex items-center justify-center" : `min-h-[40px] whitespace-pre-wrap px-2 py-2 cursor-default select-none ${isEditing ? "opacity-0" : ""}`}
                               onDoubleClick={() => {
                                 if (!isSelectCol) startEditing(rowIndex, colIndex);
                               }}
