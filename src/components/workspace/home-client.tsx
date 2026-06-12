@@ -57,6 +57,7 @@ export function HomeClient({
   const [viewMode, setViewMode] = useState<"raw" | "grouped">("raw");
   const [groupAmountOverrides, setGroupAmountOverrides] = useState<Record<string, number>>({});
   const [editingGroupRow, setEditingGroupRow] = useState<TransactionRow | null>(null);
+  const [localMappings, setLocalMappings] = useState<KeywordMapping[]>(initialMappings);
 
   const [processingText, setProcessingText] = useState<string | null>(null);
   const [localAiConfig, setLocalAiConfig] = useState<AiSettingsConfig>(defaultAiSettings);
@@ -134,7 +135,7 @@ export function HomeClient({
         }
         
         const cleaned = cleanKeyword(row.item);
-        const suggestion = suggestCategory(cleaned, initialMappings, []);
+        const suggestion = suggestCategory(cleaned, localMappings, []);
         if (suggestion?.categoryId) {
           row.categoryId = suggestion.categoryId;
           const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
@@ -185,7 +186,11 @@ export function HomeClient({
                   
                   const finalKeyword = aiCat.normalized_item_name || cleaned;
                   const createdBy = `AI (${localAiConfig.activeModel})`;
-                  addMapping(finalKeyword, matchedCategory.id, createdBy).catch(console.error);
+                  addMapping(finalKeyword, matchedCategory.id, createdBy).then((newMapping) => {
+                    if (newMapping && Array.isArray(newMapping) && newMapping.length > 0) {
+                      setLocalMappings(prev => [...prev, newMapping[0]]);
+                    }
+                  }).catch(console.error);
                 }
               }
             }
@@ -326,6 +331,104 @@ export function HomeClient({
     return computeGroupedTransactions(result, groupAmountOverrides);
   }, [rawTransactions, viewMode, groupAmountOverrides, computeGroupedTransactions, sourceFilter, receiptFilter, categoryFilter]);
 
+  const handleAutoMapRows = async (rowIndices: number[], useAI: boolean) => {
+    const rowsToMap = rowIndices.map(idx => displayTransactions[idx]).filter(Boolean);
+    if (rowsToMap.length === 0) return;
+
+    let updatedRaw = [...rawTransactions];
+    let aiItemsToClassify: string[] = [];
+    const rowsToProcessWithAI: string[] = [];
+
+    for (const row of rowsToMap) {
+      if (!row) continue;
+      if (row.categoryId) continue;
+      
+      const lowerItem = (row.item || "").toLowerCase().trim();
+      if (!lowerItem) continue;
+
+      const match = localMappings.find(m => lowerItem.includes(m.keyword.toLowerCase()));
+      if (match) {
+        const rawIdx = updatedRaw.findIndex(r => r.id === row.id);
+        if (rawIdx !== -1) {
+           const newRow = { ...updatedRaw[rawIdx] } as TransactionRow;
+           newRow.categoryId = match.categoryId;
+           newRow.isUnmappedItem = false;
+
+           const catName = initialCategories.find(c => c.id === match.categoryId)?.name;
+           if (catName && typeof newRow.amount === "number") {
+             const sign = getCategorySign(catName);
+             const isContraItem = initialContraKeywords.some(kw => lowerItem.includes(kw.toLowerCase()));
+             if (sign === "income") newRow.amount = Math.abs(newRow.amount);
+             else if (sign === "expense") {
+               if (!(isContraItem && newRow.amount > 0)) {
+                 newRow.amount = -Math.abs(newRow.amount);
+               }
+             }
+           }
+           updatedRaw[rawIdx] = newRow;
+        }
+      } else if (useAI) {
+        aiItemsToClassify.push(cleanKeyword(row.item));
+        rowsToProcessWithAI.push(row.id);
+      }
+    }
+
+    setRawTransactions(updatedRaw);
+
+    if (useAI && aiItemsToClassify.length > 0) {
+       setProcessingText("Auto-categorizing via AI...");
+       try {
+          const aiResults = await batchClassifyTransactions(aiItemsToClassify, localAiConfig);
+          let finalRaw = [...updatedRaw]; // use the most recent state
+          for (const rowId of rowsToProcessWithAI) {
+            const rawIdx = finalRaw.findIndex(r => r.id === rowId);
+            if (rawIdx === -1) continue;
+            const newRow = { ...finalRaw[rawIdx] } as TransactionRow;
+            if (newRow.categoryId) continue;
+
+            const cleaned = cleanKeyword(newRow.item);
+            const aiCat = aiResults.get(cleaned.toLowerCase());
+            if (aiCat) {
+              const matchedCategory = initialCategories.find(
+                (c) => c.name.toLowerCase() === aiCat.category.toLowerCase()
+              );
+              if (matchedCategory) {
+                newRow.categoryId = matchedCategory.id;
+                newRow.isUnmappedItem = false;
+                
+                const sign = getCategorySign(matchedCategory.name);
+                const isContraItem = initialContraKeywords.some(kw => newRow.item.toLowerCase().includes(kw.toLowerCase()));
+
+                if (typeof newRow.amount === "number") {
+                  if (sign === "income") newRow.amount = Math.abs(newRow.amount);
+                  else if (sign === "expense") {
+                    if (!(isContraItem && newRow.amount > 0)) {
+                        newRow.amount = -Math.abs(newRow.amount);
+                    }
+                  }
+                }
+                
+                const finalKeyword = aiCat.normalized_item_name || cleaned;
+                const createdBy = `AI (${localAiConfig.activeModel})`;
+                addMapping(finalKeyword, matchedCategory.id, createdBy).then((newMapping) => {
+                  if (newMapping && Array.isArray(newMapping) && newMapping.length > 0) {
+                    setLocalMappings(prev => [...prev, newMapping[0]]);
+                  }
+                }).catch(console.error);
+              }
+            }
+            finalRaw[rawIdx] = newRow;
+          }
+          setRawTransactions(finalRaw);
+       } catch (aiError: any) {
+          console.warn("AI Classification failed, ignoring:", aiError);
+          toast.error(<ErrorToast title="Auto-categorization Failed" message={aiError.message || "Unknown AI error"} />);
+       } finally {
+          setProcessingText(null);
+       }
+    }
+  };
+
   const handleDataChange = (newData: TransactionRow[]) => {
     if (viewMode === "raw") {
       setRawTransactions(prev => {
@@ -426,12 +529,14 @@ export function HomeClient({
 
     for (const rawItem of rawItems) {
       if (rawItem) {
-        addMapping(rawItem, newCategoryId).then(() => {
-          toast.success(`Mapped "${rawItem}" to new category`);
-        }).catch(err => {
-          console.error(err);
-          toast.error(`Failed to map "${rawItem}"`);
-        });
+        const isNew = !localMappings.some(m => m.keyword.toLowerCase() === rawItem.toLowerCase());
+        if (isNew) {
+          addMapping(rawItem, newCategoryId, "Manual").then((newMapping) => {
+            if (newMapping && Array.isArray(newMapping) && newMapping.length > 0) {
+              setLocalMappings(prev => [...prev, newMapping[0]]);
+            }
+          }).catch(console.error);
+        }
       }
     }
   };
@@ -634,10 +739,12 @@ export function HomeClient({
               categories={initialCategories}
               accounts={initialAccounts}
               contraKeywords={initialContraKeywords}
+              keywordMappings={localMappings}
               onDataChange={handleDataChange} 
               onEditGroupedItems={(row) => setEditingGroupRow(row)}
               onCategoryChange={handleCategoryChange}
               onCopyRows={handleCopyRows}
+              onAutoMapRows={handleAutoMapRows}
               onResolveDuplicate={(rowIndex, action) => {
                 setRawTransactions(prev => {
                   const next = [...prev];

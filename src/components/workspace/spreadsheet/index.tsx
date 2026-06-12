@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getCategorySign } from "@/features/validation/category-sign";
 import { CategoryOption, AccountOption, TransactionRow } from "@/types";
+import { KeywordMapping } from "@/features/suggestions/types";
 
 import { CategoryDropdown } from "../category-dropdown";
 import { AccountDropdown } from "../account-dropdown";
@@ -44,6 +45,8 @@ interface SpreadsheetTableProps {
   onCategoryChange?: (rowId: string, itemString: string, newCategoryId: string) => void;
   onCopyRows?: (rows: TransactionRow[]) => void;
   onResolveDuplicate?: (rowIndex: number, action: "keep" | "remove") => void;
+  onAutoMapRows?: (rowIndices: number[], useAI: boolean) => void;
+  keywordMappings?: KeywordMapping[];
   emptyMessage?: string;
 }
 
@@ -60,6 +63,8 @@ export function SpreadsheetTable({
   onCategoryChange,
   onCopyRows,
   onResolveDuplicate,
+  onAutoMapRows,
+  keywordMappings = [],
   emptyMessage = "No data available.",
 }: SpreadsheetTableProps) {
   const tableId = React.useId().replace(/:/g, "");
@@ -70,6 +75,38 @@ export function SpreadsheetTable({
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [includeHeader, setIncludeHeader] = React.useState(true);
   const [copyFlash, setCopyFlash] = React.useState(false);
+
+  // Ghost Row logic
+  React.useEffect(() => {
+    if (viewMode === "grouped") return;
+
+    const isRowEmpty = (row: TransactionRow) => {
+      return !row.item && !row.amount && !row.categoryId;
+    };
+
+    const lastRow = tableData[tableData.length - 1];
+
+    if (!lastRow || !isRowEmpty(lastRow)) {
+      const newRow: TransactionRow = {
+        id: crypto.randomUUID(),
+        date: lastRow?.date || (new Date().toISOString().split("T")[0] as string),
+        item: "",
+        amount: null,
+        categoryId: null,
+        accountId: lastRow ? lastRow.accountId : null,
+        notes: "",
+        source: "manual",
+      };
+      
+      const newData = [...tableData, newRow];
+      setTableData(newData);
+      
+      // Delaying onDataChange to prevent infinite loops if HomeClient overwrites
+      setTimeout(() => {
+        onDataChange?.(newData);
+      }, 0);
+    }
+  }, [tableData, viewMode, onDataChange]);
 
   const insertRowBelow = React.useCallback((index: number) => {
     setTableData((prev) => {
@@ -419,6 +456,7 @@ export function SpreadsheetTable({
         const oldVal = (row as any)[key];
         const newVal = matched ? matched.id : null;
         (row as any)[key] = newVal;
+        row.isCategoryManuallySet = true;
 
         if (oldVal !== newVal && newVal) {
           onCategoryChange?.(row.id as string, row.item as string, newVal);
@@ -464,19 +502,55 @@ export function SpreadsheetTable({
           const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
           (row as any).amount = sum * currentSign;
         }
+        
+        row.isCategoryManuallySet = false;
+
+        if (valToSave.trim() && keywordMappings.length > 0) {
+          const lowerItem = valToSave.toLowerCase().trim();
+          const match = keywordMappings.find(m => lowerItem.includes(m.keyword.toLowerCase()));
+
+          if (match) {
+            row.isUnmappedItem = false;
+            if (!row.isCategoryManuallySet) {
+              row.categoryId = match.categoryId;
+              const catName = categories.find((c) => c.id === match.categoryId)?.name;
+              if (catName && typeof row.amount === "number") {
+                const sign = getCategorySign(catName);
+                const isContraItem = contraKeywords.some((kw) => lowerItem.includes(kw.toLowerCase()));
+                if (sign === "income") row.amount = Math.abs(row.amount);
+                else if (sign === "expense") {
+                  if (!(isContraItem && row.amount > 0)) {
+                    row.amount = -Math.abs(row.amount);
+                  }
+                }
+              }
+            }
+          } else {
+            row.isUnmappedItem = true;
+          }
+        } else {
+          row.isUnmappedItem = false;
+        }
       } else {
         (row as any)[key] = valToSave;
       }
     },
-    [categories, accounts, onCategoryChange, contraKeywords]
+    [categories, accounts, onCategoryChange, contraKeywords, keywordMappings]
   );
 
   const saveEdit = React.useCallback(
     (rowIndex: number, colIndex: number, explicitValue?: string) => {
       setEditingCell((prev) => {
-        if (!prev || prev.rowIndex !== rowIndex || prev.colIndex !== colIndex) return prev;
+        if (!prev) {
+          return prev;
+        }
+        if (prev.rowIndex !== rowIndex || prev.colIndex !== colIndex) {
+          return prev;
+        }
         const colDef = columns[colIndex];
-        if (!colDef || !("accessorKey" in colDef)) return null;
+        if (!colDef || !("accessorKey" in colDef)) {
+          return null;
+        }
         const key = (colDef as any).accessorKey;
         const newData = [...tableData];
         const rowData = table.getRowModel().rows[rowIndex];
@@ -1092,6 +1166,7 @@ export function SpreadsheetTable({
         onDataChange={onDataChange}
         handleCopyAction={handleCopyAction}
         handlePasteAction={handlePasteAction}
+        onAutoMapRows={onAutoMapRows}
       />
     </div>
   );

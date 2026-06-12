@@ -126,6 +126,11 @@ export function getColumns({
             }}>
               {info.getValue() as string}
             </span>
+            {row.isUnmappedItem && !isDup && (
+              <span title="Kategori kosong. Silakan isi manual." className="flex items-center justify-center p-1">
+                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+              </span>
+            )}
             {isDup && (
               <Popover>
                 <PopoverTrigger

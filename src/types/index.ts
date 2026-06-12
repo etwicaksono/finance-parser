@@ -39,6 +39,8 @@ export interface TransactionRow {
   // AI Categorization State (runtime only — not persisted to DB)
   aiType?: "income" | "expense";
   aiConfidence?: number;
+  isCategoryManuallySet?: boolean;
+  isUnmappedItem?: boolean;
   // Tracking original rows when grouped
   rawItemIds?: string[];
   // Data Source Tracking

@@ -15,6 +15,7 @@ interface SpreadsheetContextMenuProps {
   onDataChange?: ((data: TransactionRow[]) => void) | undefined;
   handleCopyAction: (rowIndex: number, colIndex: number) => void;
   handlePasteAction: () => void;
+  onAutoMapRows?: ((rowIndices: number[], useAI: boolean) => void) | undefined;
 }
 
 export function SpreadsheetContextMenu({
@@ -29,6 +30,7 @@ export function SpreadsheetContextMenu({
   onDataChange,
   handleCopyAction,
   handlePasteAction,
+  onAutoMapRows,
 }: SpreadsheetContextMenuProps) {
   if (!contextMenu) return null;
 
@@ -131,6 +133,49 @@ export function SpreadsheetContextMenu({
         </button>
       )}
       {isDateColumn && <div className="h-px bg-border my-1 mx-2" />}
+      <button
+        className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+        onClick={() => {
+          const selectedRows = new Set<number>();
+          const ranges = [...multiSelections];
+          if (selectionRange) ranges.push(selectionRange);
+          if (ranges.length > 0) {
+            for (const range of ranges) {
+              for (let r = range.minRow; r <= range.maxRow; r++) {
+                selectedRows.add(r);
+              }
+            }
+          } else {
+            selectedRows.add(contextMenu.rowIndex);
+          }
+          onAutoMapRows?.(Array.from(selectedRows), true);
+          onClose();
+        }}
+      >
+        <span className="w-4 h-4 text-xs font-bold font-mono">✨</span> Mapping data (Local & AI)
+      </button>
+      <button
+        className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+        onClick={() => {
+          const selectedRows = new Set<number>();
+          const ranges = [...multiSelections];
+          if (selectionRange) ranges.push(selectionRange);
+          if (ranges.length > 0) {
+            for (const range of ranges) {
+              for (let r = range.minRow; r <= range.maxRow; r++) {
+                selectedRows.add(r);
+              }
+            }
+          } else {
+            selectedRows.add(contextMenu.rowIndex);
+          }
+          onAutoMapRows?.(Array.from(selectedRows), false);
+          onClose();
+        }}
+      >
+        <span className="w-4 h-4 text-xs font-bold font-mono">⚡</span> Mapping data Local Only
+      </button>
+      <div className="h-px bg-border my-1 mx-2" />
       <button
         className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
         onClick={() => {
