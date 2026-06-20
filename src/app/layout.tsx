@@ -25,8 +25,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Smart Financial Inbox",
-    template: "%s | Smart Financial Inbox",
+    default: "Finance Parser",
+    template: "%s | Finance Parser",
   },
   description:
     "Smart preprocessing layer untuk mempercepat workflow pencatatan keuangan pribadi. Parse transaksi WhatsApp, review di spreadsheet, sync ke Google Sheet.",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     "whatsapp",
     "keuangan",
   ],
-  authors: [{ name: "Smart Financial Inbox" }],
+  authors: [{ name: "Finance Parser" }],
   robots: "noindex, nofollow",
 };
 

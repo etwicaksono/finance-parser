@@ -459,6 +459,10 @@ export function SpreadsheetTable({
         (row as any)[key] = newVal;
         row.isCategoryManuallySet = true;
 
+        if (newVal) {
+          row.isUnmappedItem = false;
+        }
+
         if (oldVal !== newVal && newVal) {
           onCategoryChange?.(row.id as string, row.item as string, newVal);
         }
@@ -527,6 +531,7 @@ export function SpreadsheetTable({
               }
             }
           } else {
+            row.categoryId = null;
             row.isUnmappedItem = true;
           }
         } else {

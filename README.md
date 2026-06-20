@@ -1,4 +1,4 @@
-# Smart Financial Inbox (Finance Parser)
+# Finance Parser (Finance Parser)
 
 A Next.js application designed to parse, categorize, and organize unstructured financial transactions from various sources using AI. 
 
