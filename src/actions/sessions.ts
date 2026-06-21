@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { sessions } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, like, and, asc, count, sql } from "drizzle-orm";
 import { TransactionRow, SessionImage } from "@/types";
 
 export async function getSessions() {
@@ -19,11 +19,54 @@ export async function getSessions() {
       .from(sessions)
       .orderBy(desc(sessions.updatedAt))
       .limit(50);
-    
+
     return result;
   } catch (error) {
     console.error("Failed to get sessions:", error);
     return [];
+  }
+}
+
+export async function getSessionsPaginated(options?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sortBy?: "name" | "createdAt" | "updatedAt";
+  sortOrder?: "asc" | "desc";
+}) {
+  const page = options?.page ?? 1;
+  const pageSize = options?.pageSize ?? 10;
+  const search = options?.search?.trim() ?? "";
+  const sortBy = options?.sortBy ?? "updatedAt";
+  const sortOrder = options?.sortOrder ?? "desc";
+  const offset = (page - 1) * pageSize;
+
+  try {
+    const conditions = [];
+    if (search) conditions.push(like(sessions.name, `%${search}%`));
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const orderCol = sortBy === "name" ? sessions.name : sortBy === "createdAt" ? sessions.createdAt : sessions.updatedAt;
+    const orderClause = sortOrder === "desc" ? desc(orderCol) : asc(orderCol);
+
+    const [data, totalResult] = await Promise.all([
+      db.select({
+        id: sessions.id,
+        name: sessions.name,
+        createdAt: sessions.createdAt,
+        updatedAt: sessions.updatedAt,
+        rowCount: sql<number>`coalesce(jsonb_array_length(${sessions.data}), 0)`,
+        imageCount: sql<number>`coalesce(jsonb_array_length(${sessions.images}), 0)`,
+        sources: sql<string[]>`coalesce((SELECT array_agg(DISTINCT elem->>'source') FROM jsonb_array_elements(${sessions.data}) AS elem), '{}')`,
+      }).from(sessions).where(whereClause).orderBy(orderClause).limit(pageSize).offset(offset),
+      db.select({ count: count() }).from(sessions).where(whereClause),
+    ]);
+
+    const total = totalResult[0]?.count ?? 0;
+    return { data, total, page, pageSize };
+  } catch (error) {
+    console.error("Error fetching sessions:", error);
+    return { error: "Failed to fetch sessions" };
   }
 }
 
@@ -62,6 +105,24 @@ export async function updateSession(id: string, updates: { name?: string; data?:
   } catch (error) {
     console.error(`Failed to update session ${id}:`, error);
     return null;
+  }
+}
+
+export async function updateSessionName(id: string, name: string) {
+  try {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: "Name cannot be empty" };
+
+    const [existing] = await db.select().from(sessions).where(eq(sessions.id, id));
+    if (!existing) return { error: "Session not found" };
+
+    if (existing.name === trimmed) return { success: true };
+
+    await db.update(sessions).set({ name: trimmed }).where(eq(sessions.id, id));
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("Error updating session name:", error);
+    return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 

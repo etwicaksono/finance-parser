@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Settings, LogOut } from "lucide-react";
+import { Settings, LogOut, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/actions/auth";
 
@@ -34,6 +34,15 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="History"
+          title="History"
+          onClick={() => router.push("/history")}
+        >
+          <History className="h-5 w-5 text-muted-foreground" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"

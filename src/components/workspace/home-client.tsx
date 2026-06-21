@@ -42,17 +42,19 @@ interface HomeClientProps {
   defaultAiSettings: AiSettingsConfig;
   geminiModels: string[];
   swiftrouterModels: string[];
+  initialSessionId?: string | null;
 }
 
 export function HomeClient({ 
-  initialCategories, 
-  initialAccounts, 
+  initialCategories,
+  initialAccounts,
   initialMappings,
   initialContraKeywords = [],
   initialCleaningRules,
   defaultAiSettings,
   geminiModels,
-  swiftrouterModels
+  swiftrouterModels,
+  initialSessionId = null,
 }: HomeClientProps) {
   const [rawTransactions, setRawTransactions] = useState<TransactionRow[]>([]);
   const [sessionImages, setSessionImages] = useState<SessionImage[]>([]);
@@ -75,6 +77,18 @@ export function HomeClient({
 
   React.useEffect(() => {
     import("@/actions/sessions").then(async ({ getSessions, getSessionById }) => {
+      // If a specific session was requested via ?session=uuid, load it
+      if (initialSessionId) {
+        const sess = await getSessionById(initialSessionId);
+        if (sess) {
+          setCurrentSessionId(sess.id);
+          setRawTransactions((sess.data as TransactionRow[]) || []);
+          setSessionImages((sess.images as SessionImage[]) || []);
+          setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
+          return;
+        }
+      }
+      // Otherwise auto-load the most recent session
       const sessions = await getSessions();
       if (sessions.length > 0 && sessions[0]?.id) {
         const sess = await getSessionById(sessions[0].id);
@@ -100,9 +114,37 @@ export function HomeClient({
     if (!currentSessionId) {
       if (rawTransactions.length > 0 || sessionImages.length > 0) {
         // Auto-create session on first data
-        import("@/actions/sessions").then(async ({ createSession }) => {
+        import("@/actions/sessions").then(async ({ createSession, getSessions, getSessionById, updateSession }) => {
           const { format } = await import("date-fns");
           const name = `Parsing - ${format(new Date(), "dd MMM yyyy HH:mm")}`;
+
+          // Check if the most recent session is empty and can be reused
+          const sessions = await getSessions();
+          if (sessions.length > 0 && sessions[0]?.id) {
+            const recent = await getSessionById(sessions[0].id);
+            if (recent) {
+              const recentData = (recent.data as TransactionRow[]) || [];
+              const isEmpty = recentData.length === 0 ||
+                (recentData.length === 1 && (
+                  !recentData[0]?.item || recentData[0].item.trim() === "" ||
+                  recentData[0]?.amount == null
+                ));
+
+              if (isEmpty) {
+                // Reuse this session: rename and update with new data
+                await updateSession(recent.id, {
+                  name,
+                  data: rawTransactions,
+                  images: sessionImages,
+                  metadata: sessionMetadata as Record<string, unknown>,
+                });
+                setCurrentSessionId(recent.id);
+                return;
+              }
+            }
+          }
+
+          // No empty session found, create a new one
           const sess = await createSession(name, rawTransactions, sessionImages, sessionMetadata as Record<string, unknown>);
           if (sess) {
             setCurrentSessionId(sess.id);
