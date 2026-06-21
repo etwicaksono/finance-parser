@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
 import { addMapping, batchAddMappings } from "@/actions/mappings";
-import { cleanKeyword } from "@/lib/keyword-utils";
+import { cleanKeyword, type KeywordCleaningRules } from "@/lib/keyword-utils";
 import { isIsoDateAmbiguous } from "@/features/parser/date-parser";
 import * as React from "react";
 import { ReceiptScanInput } from "@/components/workspace/receipt-scan-input";
@@ -38,6 +38,7 @@ interface HomeClientProps {
   initialAccounts: AccountOption[];
   initialMappings: KeywordMapping[];
   initialContraKeywords?: string[];
+  initialCleaningRules?: KeywordCleaningRules;
   defaultAiSettings: AiSettingsConfig;
   geminiModels: string[];
   swiftrouterModels: string[];
@@ -48,6 +49,7 @@ export function HomeClient({
   initialAccounts, 
   initialMappings,
   initialContraKeywords = [],
+  initialCleaningRules,
   defaultAiSettings,
   geminiModels,
   swiftrouterModels
@@ -58,6 +60,7 @@ export function HomeClient({
   const [groupAmountOverrides, setGroupAmountOverrides] = useState<Record<string, number>>({});
   const [editingGroupRow, setEditingGroupRow] = useState<TransactionRow | null>(null);
   const [localMappings, setLocalMappings] = useState<KeywordMapping[]>(initialMappings);
+  const cleaningRules = initialCleaningRules;
 
   const [processingText, setProcessingText] = useState<string | null>(null);
   const [localAiConfig, setLocalAiConfig] = useState<AiSettingsConfig>(defaultAiSettings);
@@ -134,7 +137,7 @@ export function HomeClient({
           row.isDateAmbiguous = isIsoDateAmbiguous(row.date);
         }
         
-        const cleaned = cleanKeyword(row.item);
+        const cleaned = cleanKeyword(row.item, cleaningRules);
         const suggestion = suggestCategory(cleaned, localMappings, []);
         if (suggestion?.categoryId) {
           row.categoryId = suggestion.categoryId;
@@ -153,7 +156,7 @@ export function HomeClient({
             }
           }
         } else {
-          itemsToClassify.push(cleanKeyword(row.item));
+          itemsToClassify.push(cleanKeyword(row.item, cleaningRules));
         }
         return row;
       });
@@ -164,7 +167,7 @@ export function HomeClient({
           const aiResults = await batchClassifyTransactions(itemsToClassify, localAiConfig);
           for (const row of enrichedRows) {
             if (!row.categoryId) {
-              const cleaned = cleanKeyword(row.item);
+              const cleaned = cleanKeyword(row.item, cleaningRules);
               const aiCat = aiResults.get(cleaned.toLowerCase());
               if (aiCat) {
                 const matchedCategory = initialCategories.find(
@@ -366,7 +369,7 @@ export function HomeClient({
            updatedRaw[rawIdx] = newRow;
         }
       } else if (useAI) {
-        aiItemsToClassify.push(cleanKeyword(row.item));
+        aiItemsToClassify.push(cleanKeyword(row.item, cleaningRules));
         rowsToProcessWithAI.push(row.id);
       }
     }
@@ -384,7 +387,7 @@ export function HomeClient({
             const newRow = { ...finalRaw[rawIdx] } as TransactionRow;
             if (newRow.categoryId) continue;
 
-            const cleaned = cleanKeyword(newRow.item);
+            const cleaned = cleanKeyword(newRow.item, cleaningRules);
             const aiCat = aiResults.get(cleaned.toLowerCase());
             if (aiCat) {
               const matchedCategory = initialCategories.find(
@@ -546,7 +549,7 @@ export function HomeClient({
   };
 
   const handleCategoryChange = (rowId: string, itemString: string, newCategoryId: string) => {
-    const rawItems = itemString.split("\n").map(s => cleanKeyword(s)).filter(Boolean);
+    const rawItems = itemString.split("\n").map(s => cleanKeyword(s, cleaningRules)).filter(Boolean);
 
     for (const rawItem of rawItems) {
       if (rawItem) {
@@ -566,7 +569,7 @@ export function HomeClient({
     // Extract keyword & category pairs to bump their usage score
     const mappingsToBump = copiedRows
       .filter((r) => r.item && r.categoryId)
-      .map((r) => ({ keyword: cleanKeyword(r.item), categoryId: r.categoryId! }));
+      .map((r) => ({ keyword: cleanKeyword(r.item, cleaningRules), categoryId: r.categoryId! }));
       
     if (mappingsToBump.length > 0) {
       batchAddMappings(mappingsToBump).catch(console.error);

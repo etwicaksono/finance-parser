@@ -88,6 +88,12 @@ export function CategoriesTab() {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="mb-4">
+        <h3 className="text-lg font-medium">Categories</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage transaction categories used to classify and group your expenses.
+        </p>
+      </div>
       <form onSubmit={handleAdd} className="flex gap-2 mb-4">
         <Input
           placeholder="New category name..."

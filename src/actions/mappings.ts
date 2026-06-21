@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { keywordMappings } from "@/db/schema";
 import { eq, like, sql, count, inArray, and, asc, desc } from "drizzle-orm";
 import { cleanKeyword } from "@/lib/keyword-utils";
+import { getKeywordCleaningRules } from "@/actions/keyword-cleaning-rules";
 import { revalidatePath } from "next/cache";
 
 const PAGE_SIZE = 100;
@@ -198,9 +199,10 @@ export async function cleanupMappings() {
     if (!allMappings || allMappings.length === 0) return { count: 0 };
 
     // Group mappings by their cleaned keyword
+    const { data: cleaningRules } = await getKeywordCleaningRules();
     const groups: Record<string, typeof allMappings> = {};
     for (const m of allMappings) {
-      const cleaned = cleanKeyword(m.keyword).toLowerCase();
+      const cleaned = cleanKeyword(m.keyword, cleaningRules).toLowerCase();
       if (!groups[cleaned]) groups[cleaned] = [];
       groups[cleaned].push(m);
     }

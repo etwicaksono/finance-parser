@@ -29,6 +29,31 @@ async function run() {
     }
     console.log("Default contra keywords seeded.");
 
+    // 0.5. Seed Default Keyword Cleaning Rules
+    console.log("Seeding default keyword cleaning rules...");
+    const DEFAULT_QUANTITY_UNITS = [
+      "kg", "g", "gr", "gram", "ml", "liter", "l", "pcs", "buah", "biji",
+      "slop", "pack", "ikat", "besek", "box", "porsi", "botol", "kaleng",
+      "cup", "bungkus", "bks", "lembar", "lbr"
+    ];
+    const DEFAULT_DISCOUNT_PREFIXES = ["Disc"];
+
+    for (const unit of DEFAULT_QUANTITY_UNITS) {
+      await targetClient.query(`
+        INSERT INTO keyword_cleaning_rules (id, type, value, created_at)
+        VALUES ($1, 'quantity_unit', $2, NOW())
+        ON CONFLICT DO NOTHING
+      `, [crypto.randomUUID(), unit]);
+    }
+    for (const prefix of DEFAULT_DISCOUNT_PREFIXES) {
+      await targetClient.query(`
+        INSERT INTO keyword_cleaning_rules (id, type, value, created_at)
+        VALUES ($1, 'discount_prefix', $2, NOW())
+        ON CONFLICT DO NOTHING
+      `, [crypto.randomUUID(), prefix]);
+    }
+    console.log("Default keyword cleaning rules seeded.");
+
     // 1. Seed Google Sheets Categories
     console.log("Seeding Google Sheets Categories...");
     const SHEET_CATEGORIES_RAW = [

@@ -2,39 +2,48 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  getContraKeywords,
-  getContraKeywordsPaginated,
-  addContraKeyword,
-  deleteContraKeyword,
-  updateContraKeyword,
-  seedDefaultContraKeywords,
-} from "@/actions/contra-keywords";
+  getKeywordCleaningRulesRaw,
+  getKeywordCleaningRules,
+  addKeywordCleaningRule,
+  deleteKeywordCleaningRule,
+  updateKeywordCleaningRule,
+  seedDefaultKeywordCleaningRules,
+} from "@/actions/keyword-cleaning-rules";
+import type { KeywordCleaningRuleType } from "@/lib/keyword-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Plus, Loader2, Search, ArrowUpDown, ArrowUp, ArrowDown, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
-type ContraKeyword = {
+type Rule = {
   id: string;
-  keyword: string;
+  type: string;
+  value: string;
   createdAt: Date;
 };
 
-type SortBy = "keyword" | "createdAt";
+type SortBy = "value" | "createdAt";
 type SortOrder = "asc" | "desc";
 
-export function ContraKeywordsTab() {
-  const [keywords, setKeywords] = useState<ContraKeyword[]>([]);
+function RuleSection({
+  title,
+  description,
+  type,
+}: {
+  title: string;
+  description: string;
+  type: KeywordCleaningRuleType;
+}) {
+  const [rules, setRules] = useState<Rule[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("keyword");
+  const [sortBy, setSortBy] = useState<SortBy>("value");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [isLoading, setIsLoading] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [newKeyword, setNewKeyword] = useState("");
+  const [newValue, setNewValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,43 +57,32 @@ export function ContraKeywordsTab() {
     }, 400);
   };
 
-  const fetchKeywords = useCallback(async () => {
+  const fetchRules = useCallback(async () => {
     setIsLoading(true);
-    const result = await getContraKeywordsPaginated({
+    const result = await getKeywordCleaningRulesRaw({
       page,
       search: debouncedSearch,
       sortBy,
       sortOrder,
+      type,
     });
     if (result.error) {
       toast.error(result.error);
     } else {
-      setKeywords((result.data ?? []) as ContraKeyword[]);
+      setRules((result.data ?? []) as Rule[]);
       setTotal(result.total ?? 0);
-      setPageSize(result.pageSize ?? 10);
+      setPageSize(result.pageSize ?? 50);
     }
     setIsLoading(false);
-  }, [page, debouncedSearch, sortBy, sortOrder]);
-
-  // Initial load + seed check
-  useEffect(() => {
-    const init = async () => {
-      const { data } = await getContraKeywords();
-      if (!data || data.length === 0) {
-        await seedDefaultContraKeywords();
-      }
-      setIsReady(true);
-    };
-    init();
-  }, []);
+  }, [page, debouncedSearch, sortBy, sortOrder, type]);
 
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, sortBy, sortOrder]);
 
   useEffect(() => {
-    if (isReady) fetchKeywords();
-  }, [fetchKeywords, isReady]);
+    fetchRules();
+  }, [fetchRules]);
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -109,59 +107,49 @@ export function ContraKeywordsTab() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newKeyword.trim()) return;
+    if (!newValue.trim()) return;
     setIsSubmitting(true);
-    const result = await addContraKeyword(newKeyword);
+    const result = await addKeywordCleaningRule(type, newValue);
     if (result.error) {
       toast.error(result.error);
     } else {
-      setNewKeyword("");
-      fetchKeywords();
+      setNewValue("");
+      fetchRules();
     }
     setIsSubmitting(false);
   };
 
   const handleDelete = async (id: string) => {
-    const result = await deleteContraKeyword(id);
+    const result = await deleteKeywordCleaningRule(id);
     if (result.error) {
       toast.error(result.error);
     } else {
-      fetchKeywords();
+      fetchRules();
     }
   };
 
-  const handleUpdate = async (id: string, keyword: string) => {
-    const result = await updateContraKeyword(id, keyword);
+  const handleUpdate = async (id: string, value: string) => {
+    const result = await updateKeywordCleaningRule(id, value);
     if (result.error) {
       toast.error(result.error);
-      fetchKeywords();
+      fetchRules();
     }
   };
 
-  if (!isReady) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div>
-        <h3 className="text-lg font-medium">Contra Keywords</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage keywords that represent discounts, vouchers, or refunds. Items containing these keywords will bypass the automatic negative sign conversion in expense categories, allowing them to accurately reduce your total expenses.
-        </p>
+        <h4 className="text-sm font-medium">{title}</h4>
+        <p className="text-xs text-muted-foreground mt-1">{description}</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="relative w-full sm:w-72">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="relative w-full sm:w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
-            placeholder="Search keywords..."
-            className="pl-8 pr-8"
+            placeholder="Search..."
+            className="pl-8 pr-8 h-9"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
@@ -177,14 +165,13 @@ export function ContraKeywordsTab() {
         </div>
         <form onSubmit={handleAdd} className="flex gap-2 w-full sm:w-auto">
           <Input
-            placeholder="New keyword (e.g. diskon)"
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            className="w-full sm:w-64"
+            placeholder={`Add ${title.toLowerCase()}...`}
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            className="h-9 w-full sm:w-48"
           />
-          <Button type="submit" disabled={isSubmitting || !newKeyword.trim()}>
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-            Add
+          <Button type="submit" size="sm" disabled={!newValue.trim() || isSubmitting}>
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           </Button>
         </form>
       </div>
@@ -197,9 +184,9 @@ export function ContraKeywordsTab() {
                 <th className="px-4 py-2.5 font-medium w-12 text-center">#</th>
                 <th
                   className="px-4 py-2.5 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none"
-                  onClick={() => handleSort("keyword")}
+                  onClick={() => handleSort("value")}
                 >
-                  Keyword {renderSortIcon("keyword")}
+                  Value {renderSortIcon("value")}
                 </th>
                 <th
                   className="px-4 py-2.5 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none w-40"
@@ -217,26 +204,26 @@ export function ContraKeywordsTab() {
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
                   </td>
                 </tr>
-              ) : keywords.length === 0 ? (
+              ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    {debouncedSearch ? `No keywords found for "${debouncedSearch}"` : "No keywords found."}
+                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                    {debouncedSearch ? `No entries found for "${debouncedSearch}"` : "No entries found."}
                   </td>
                 </tr>
               ) : (
-                keywords.map((k, index) => (
-                  <tr key={k.id} className="hover:bg-muted/30 group">
+                rules.map((r, index) => (
+                  <tr key={r.id} className="hover:bg-muted/30 group">
                     <td className="px-4 py-1 text-center text-muted-foreground text-xs">
                       {(page - 1) * pageSize + index + 1}
                     </td>
                     <td className="px-4 py-1">
                       <Input
-                        defaultValue={k.keyword}
-                        key={k.keyword}
+                        defaultValue={r.value}
+                        key={r.value}
                         className="h-7 border-transparent hover:border-input focus:border-input bg-transparent text-sm"
                         onBlur={(e) => {
-                          if (e.target.value !== k.keyword) {
-                            handleUpdate(k.id, e.target.value);
+                          if (e.target.value !== r.value) {
+                            handleUpdate(r.id, e.target.value);
                           }
                         }}
                         onKeyDown={(e) => {
@@ -245,14 +232,14 @@ export function ContraKeywordsTab() {
                       />
                     </td>
                     <td className="px-4 py-1 text-xs text-muted-foreground">
-                      {new Date(k.createdAt).toLocaleDateString()}
+                      {new Date(r.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-1 text-center">
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 text-destructive opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
-                        onClick={() => handleDelete(k.id)}
+                        onClick={() => handleDelete(r.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -267,7 +254,7 @@ export function ContraKeywordsTab() {
 
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          {isLoading ? "Loading..." : `${total} ${total === 1 ? "keyword" : "keywords"}`}
+          {isLoading ? "Loading..." : `${total} ${total === 1 ? "entry" : "entries"}`}
         </span>
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
@@ -292,6 +279,55 @@ export function ContraKeywordsTab() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+export function KeywordCleaningRulesTab() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await getKeywordCleaningRules();
+      if (!data || (data.quantityUnits.length === 0 && data.discountPrefixes.length === 0)) {
+        await seedDefaultKeywordCleaningRules();
+      }
+      setIsReady(true);
+    };
+    init();
+  }, []);
+
+  if (!isReady) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h3 className="text-lg font-medium">Keyword Cleaning Rules</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage patterns used by the keyword cleaner to strip quantity prefixes and discount
+          annotations from item names before auto-mapping.
+        </p>
+      </div>
+
+      <RuleSection
+        title="Quantity Units"
+        description="Unit strings stripped from the beginning of item names (e.g. &quot;2 kg&quot; → &quot;&quot;)."
+        type="quantity_unit"
+      />
+
+      <div className="border-t" />
+
+      <RuleSection
+        title="Discount Prefixes"
+        description="Prefixes for trailing parenthetical annotations stripped from item names (e.g. &quot;Item (Disc 6k)&quot; → &quot;Item&quot;)."
+        type="discount_prefix"
+      />
     </div>
   );
 }

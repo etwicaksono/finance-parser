@@ -84,6 +84,12 @@ export function AccountsTab() {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="mb-4">
+        <h3 className="text-lg font-medium">Accounts</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage payment accounts used to track which source funds each transaction.
+        </p>
+      </div>
       <form onSubmit={handleAdd} className="flex gap-2 mb-4">
         <Input
           placeholder="New account name..."

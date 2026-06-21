@@ -224,7 +224,13 @@ export function MappingsTable({ categories }: MappingsTableProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <div className="px-4 py-3 border-b bg-muted/20 shrink-0">
+        <div className="px-4 py-3 border-b bg-muted/20 shrink-0 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium">Mappings</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Manage keyword-to-category mappings for automatic classification.
+            </p>
+          </div>
           <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4 mr-1" /> Add Mapping</Button>} />
         </div>
 

@@ -12,4 +12,5 @@ export * from "./keyword-mappings";
 export * from "./aliases";
 export * from "./duplicate-hashes";
 export * from "./contra-keywords";
+export * from "./keyword-cleaning-rules";
 export * from "./sessions";
