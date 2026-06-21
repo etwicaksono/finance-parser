@@ -100,7 +100,7 @@ export function HomeClient({
         import("@/actions/sessions").then(async ({ createSession }) => {
           const { format } = await import("date-fns");
           const name = `Parsing - ${format(new Date(), "dd MMM yyyy HH:mm")}`;
-          const sess = await createSession(name, rawTransactions, sessionImages, sessionMetadata);
+          const sess = await createSession(name, rawTransactions, sessionImages, sessionMetadata as Record<string, unknown>);
           if (sess) {
             setCurrentSessionId(sess.id);
           }
@@ -111,7 +111,7 @@ export function HomeClient({
     
     const timer = setTimeout(() => {
       import("@/actions/sessions").then(({ updateSession }) => {
-        updateSession(currentSessionId, { data: rawTransactions, images: sessionImages, metadata: sessionMetadata }).catch(console.error);
+        updateSession(currentSessionId, { data: rawTransactions, images: sessionImages, metadata: sessionMetadata as Record<string, unknown> }).catch(console.error);
       });
     }, 1000);
     return () => clearTimeout(timer);
@@ -195,9 +195,9 @@ export function HomeClient({
               }
             }
           }
-        } catch (aiError: any) {
+        } catch (aiError: unknown) {
           console.warn("AI Classification failed, ignoring:", aiError);
-          toast.error(<ErrorToast title="Auto-categorization Failed" message={aiError.message || "Unknown AI error"} />);
+          toast.error(<ErrorToast title="Auto-categorization Failed" message={aiError instanceof Error ? aiError.message : "Unknown AI error"} />);
         }
       }
 
@@ -220,9 +220,9 @@ export function HomeClient({
       if (workspaceSettings.audioEnabled) {
         playNotification(workspaceSettings.audioTone);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(<ErrorToast title="Failed to Process Rows" message={error.message || "Failed to process data"} />);
+      toast.error(<ErrorToast title="Failed to Process Rows" message={error instanceof Error ? error.message : "Failed to process data"} />);
       if (workspaceSettings.audioEnabled) {
         playNotification("error");
       }
@@ -243,8 +243,6 @@ export function HomeClient({
     const map = new Map<string, TransactionRow & { subItems: Map<string, { amount: number, count: number }> }>();
     
     for (const rawRow of raw) {
-      if (rawRow.isDuplicate) continue;
-
       let catForGrouping = "Unknown";
       if (rawRow.categoryId) {
         catForGrouping = initialCategories.find(c => c.id === rawRow.categoryId)?.name || rawRow.categoryId;
@@ -420,9 +418,9 @@ export function HomeClient({
             finalRaw[rawIdx] = newRow;
           }
           setRawTransactions(finalRaw);
-       } catch (aiError: any) {
+       } catch (aiError: unknown) {
           console.warn("AI Classification failed, ignoring:", aiError);
-          toast.error(<ErrorToast title="Auto-categorization Failed" message={aiError.message || "Unknown AI error"} />);
+          toast.error(<ErrorToast title="Auto-categorization Failed" message={aiError instanceof Error ? aiError.message : "Unknown AI error"} />);
        } finally {
           setProcessingText(null);
        }
@@ -469,7 +467,30 @@ export function HomeClient({
       const currentDisplay = computeGroupedTransactions(rawTransactions, groupAmountOverrides);
       let updatedRaw = [...rawTransactions];
       let updatedOverrides = { ...groupAmountOverrides };
-      
+
+      // Detect deleted grouped rows and remove their underlying raw transactions
+      const currentIds = new Set(currentDisplay.map(r => r.id));
+      const newIds = new Set(newData.map(r => r.id));
+      const deletedIds: string[] = [];
+      for (const id of currentIds) {
+        if (!newIds.has(id)) deletedIds.push(id);
+      }
+      if (deletedIds.length > 0) {
+        const rawIdsToDelete = new Set<string>();
+        for (const id of deletedIds) {
+          const groupedRow = currentDisplay.find(r => r.id === id);
+          if (groupedRow?.rawItemIds) {
+            for (const rawId of groupedRow.rawItemIds) {
+              rawIdsToDelete.add(rawId);
+            }
+          }
+        }
+        updatedRaw = updatedRaw.filter(r => !rawIdsToDelete.has(r.id));
+        for (const id of deletedIds) {
+          delete updatedOverrides[id];
+        }
+      }
+
       newData.forEach(newRow => {
         const oldRow = currentDisplay.find(r => r.id === newRow.id);
         if (oldRow) {
@@ -479,7 +500,7 @@ export function HomeClient({
           const categoryChanged = oldRow.categoryId !== newRow.categoryId;
           const accountChanged = oldRow.accountId !== newRow.accountId;
           const dateChanged = oldRow.date !== newRow.date;
-          
+
           if (categoryChanged || accountChanged || dateChanged) {
             updatedRaw = updatedRaw.map(rawRow => {
               if (newRow.rawItemIds?.includes(rawRow.id)) {
@@ -515,9 +536,9 @@ export function HomeClient({
         source: "chat",
       }));
       await processRawRows(rawRows);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error.message || "Failed to parse text");
+      toast.error(error instanceof Error ? error.message : "Failed to parse text");
       if (workspaceSettings.audioEnabled) {
         playNotification("error");
       }
@@ -566,9 +587,9 @@ export function HomeClient({
       const rawRows = (response.data || []).map(r => ({ ...r, source: "scan" as const }));
       await processRawRows(rawRows);
       return response.parsedIds;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(<ErrorToast title="Failed to scan receipt" message={error.message || "Failed to scan receipt"} />);
+      toast.error(<ErrorToast title="Failed to scan receipt" message={error instanceof Error ? error.message : "Failed to scan receipt"} />);
       if (workspaceSettings.audioEnabled) {
         playNotification("error");
       }
@@ -577,11 +598,11 @@ export function HomeClient({
     }
   };
 
-  const handleManualJson = async (rawInput: any[]) => {
+  const handleManualJson = async (rawInput: { date?: string | null; item?: string; amount?: number }[]) => {
     try {
       const rawRows: TransactionRow[] = rawInput.map(r => ({
         id: crypto.randomUUID(),
-        date: r.date || new Date().toISOString().split("T")[0],
+        date: r.date || new Date().toISOString().split("T")[0] || "",
         item: String(r.item || "Unknown Item"),
         amount: Number(r.amount) || null,
         categoryId: null,
@@ -590,7 +611,7 @@ export function HomeClient({
         source: "manual",
       }));
       await processRawRows(rawRows);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       toast.error("Format JSON tidak sesuai.");
       if (workspaceSettings.audioEnabled) {

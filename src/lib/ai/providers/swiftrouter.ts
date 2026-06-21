@@ -29,7 +29,7 @@ export class SwiftRouterProvider implements AiProvider {
     await this.fetchCompletions([{ role: "user", content: "ping" }]);
   }
 
-  private async fetchCompletions(messages: any[]) {
+  private async fetchCompletions(messages: { role: string; content: string | unknown[] }[]) {
     const response = await fetch("https://api.swiftrouter.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -54,10 +54,10 @@ export class SwiftRouterProvider implements AiProvider {
 
   private stripJsonMarkdown(text: string): string {
     let clean = text.trim();
-    if (clean.startsWith("\`\`\`json")) {
-      clean = clean.replace(/^\`\`\`json/, "").replace(/\`\`\`$/, "").trim();
-    } else if (clean.startsWith("\`\`\`")) {
-      clean = clean.replace(/^\`\`\`/, "").replace(/\`\`\`$/, "").trim();
+    if (clean.startsWith("```json")) {
+      clean = clean.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (clean.startsWith("```")) {
+      clean = clean.replace(/^```/, "").replace(/```$/, "").trim();
     }
     return clean;
   }

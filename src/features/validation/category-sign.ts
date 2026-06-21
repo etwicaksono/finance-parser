@@ -26,8 +26,8 @@ export function getCategorySign(categoryName: string): CategorySign {
   const expenseCategories = taxonomyData.expense;
   for (const groupName in expenseCategories) {
     if (groupName.toLowerCase() === name) return "expense";
-    const group = (expenseCategories as any)[groupName];
-    if (group.children) {
+    const group = (expenseCategories as Record<string, { name?: string; children?: { name: string }[] }>)[groupName];
+    if (group?.children) {
       for (const child of group.children) {
         if (child.name.toLowerCase() === name) return "expense";
       }
@@ -38,8 +38,8 @@ export function getCategorySign(categoryName: string): CategorySign {
   const bothCategories = taxonomyData.both;
   for (const groupName in bothCategories) {
     if (groupName.toLowerCase() === name) return "both";
-    const group = (bothCategories as any)[groupName];
-    if (group.children) {
+    const group = (bothCategories as Record<string, { name?: string; children?: { name: string }[] }>)[groupName];
+    if (group?.children) {
       for (const child of group.children) {
         if (child.name.toLowerCase() === name) return "both";
       }

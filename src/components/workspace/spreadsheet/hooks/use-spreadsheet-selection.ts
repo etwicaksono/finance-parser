@@ -60,7 +60,7 @@ export function useSpreadsheetSelection(tableData: TransactionRow[], columns: Co
            processed.add(keyStr);
 
            const colDef = columns[c];
-           const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+           const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : null;
            if (key === "amount") {
               const val = tableData[r]?.amount;
               if (typeof val === 'number') {

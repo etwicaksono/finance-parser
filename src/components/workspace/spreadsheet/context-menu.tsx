@@ -10,8 +10,8 @@ interface SpreadsheetContextMenuProps {
   tableData: TransactionRow[];
   setTableData: React.Dispatch<React.SetStateAction<TransactionRow[]>>;
   table: ReactTable<TransactionRow>;
-  selectionRange: any;
-  multiSelections: any[];
+  selectionRange: { minRow: number; maxRow: number; minCol: number; maxCol: number } | null;
+  multiSelections: { minRow: number; maxRow: number; minCol: number; maxCol: number }[];
   onDataChange?: ((data: TransactionRow[]) => void) | undefined;
   handleCopyAction: (rowIndex: number, colIndex: number) => void;
   handlePasteAction: () => void;
@@ -35,7 +35,7 @@ export function SpreadsheetContextMenu({
   if (!contextMenu) return null;
 
   const colDef = columns[contextMenu.colIndex];
-  const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+  const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : null;
   const row = tableData[contextMenu.rowIndex];
   const isDateColumn = key === "date";
   const isDateWarning = isDateColumn && row?.isDateAmbiguous;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2, ScanText, X, ImagePlus, Play, Trash2, ZoomIn, ZoomOut, CheckCircle } from "lucide-react";
+import { Loader2, ScanText, X, ImagePlus, Play, ZoomIn, ZoomOut, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -67,6 +67,7 @@ export function ReceiptScanInput({
         }
       }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Initialize on mount based on key reset
 
   useEffect(() => {

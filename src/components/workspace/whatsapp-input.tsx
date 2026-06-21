@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Play, Trash2, MessageSquareText } from "lucide-react";
+import { Play, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 

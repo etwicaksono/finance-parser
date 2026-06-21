@@ -38,10 +38,10 @@ export function ManualJsonInput({ value, onChange, onParse, onClearOutput }: Man
     try {
       // Strip markdown code blocks if the user copied them from ChatGPT
       let cleanJson = jsonText.trim();
-      if (cleanJson.startsWith("\`\`\`json")) {
-        cleanJson = cleanJson.replace(/^\`\`\`json/, "").replace(/\`\`\`$/, "").trim();
-      } else if (cleanJson.startsWith("\`\`\`")) {
-        cleanJson = cleanJson.replace(/^\`\`\`/, "").replace(/\`\`\`$/, "").trim();
+      if (cleanJson.startsWith("```json")) {
+        cleanJson = cleanJson.replace(/^```json/, "").replace(/```$/, "").trim();
+      } else if (cleanJson.startsWith("```")) {
+        cleanJson = cleanJson.replace(/^```/, "").replace(/```$/, "").trim();
       }
 
       const parsed = JSON.parse(cleanJson);
@@ -49,8 +49,8 @@ export function ManualJsonInput({ value, onChange, onParse, onClearOutput }: Man
         throw new Error("JSON harus berupa array []");
       }
       onParse(parsed);
-    } catch (e: any) {
-      alert("Invalid JSON: " + e.message);
+    } catch (e: unknown) {
+      alert("Invalid JSON: " + (e instanceof Error ? e.message : String(e)));
     }
   };
 

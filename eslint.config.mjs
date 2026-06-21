@@ -58,7 +58,7 @@ const eslintConfig = defineConfig([
       ...nextPlugin.configs["core-web-vitals"].rules,
 
       // General rules
-      "no-console": "warn",
+      "no-console": ["warn", { allow: ["error", "warn"] }],
       "no-undef": "off",
     },
   },
@@ -73,6 +73,14 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "next-env.d.ts",
   ]),
+
+  // Allow console.log in scripts and scratch files
+  {
+    files: ["scripts/**", "scratch/**"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -6,6 +6,7 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   SortingState,
+  RowSelectionState,
   useReactTable,
 } from "@tanstack/react-table";
 import { Copy } from "lucide-react";
@@ -21,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getCategorySign } from "@/features/validation/category-sign";
 import { CategoryOption, AccountOption, TransactionRow } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
 
@@ -33,6 +33,13 @@ import { getColumns } from "./columns";
 import { SpreadsheetContextMenu } from "./context-menu";
 import { useSpreadsheetSelection } from "./hooks/use-spreadsheet-selection";
 import { CellPos } from "./types";
+import {
+  applyColumnUpdate,
+  getColumnCellValue,
+  isColumnDropdown,
+  isColumnEditable,
+  type ColumnHandlerContext,
+} from "./column-handlers";
 
 interface SpreadsheetTableProps {
   data: TransactionRow[];
@@ -71,13 +78,26 @@ export function SpreadsheetTable({
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
   const [editValue, setEditValue] = React.useState<string>("");
-  const [rowSelection, setRowSelection] = React.useState({});
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [includeHeader, setIncludeHeader] = React.useState(true);
   const [copyFlash, setCopyFlash] = React.useState(false);
 
+  // Ref to skip ghost row effect when data was just synced from props
+  const skipGhostRowRef = React.useRef(false);
+
+  // Sync external data prop to internal state (must run before ghost row effect)
+  React.useEffect(() => {
+    skipGhostRowRef.current = true;
+    setTableData(data);
+  }, [data]);
+
   // Ghost Row logic
   React.useEffect(() => {
+    if (skipGhostRowRef.current) {
+      skipGhostRowRef.current = false;
+      return;
+    }
     if (viewMode === "grouped") return;
 
     const isRowEmpty = (row: TransactionRow) => {
@@ -98,10 +118,10 @@ export function SpreadsheetTable({
         isDuplicate: false,
         source: "manual-input",
       };
-      
+
       const newData = [...tableData, newRow];
       setTableData(newData);
-      
+
       // Delaying onDataChange to prevent infinite loops if HomeClient overwrites
       setTimeout(() => {
         onDataChange?.(newData);
@@ -165,7 +185,6 @@ export function SpreadsheetTable({
   const {
     selectionAnchor,
     setSelectionAnchor,
-    selectionFocus,
     setSelectionFocus,
     multiSelections,
     setMultiSelections,
@@ -180,7 +199,24 @@ export function SpreadsheetTable({
   const isKeyboardNavigating = React.useRef(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const autoScrollInterval = React.useRef<NodeJS.Timeout | null>(null);
+  const checkboxShiftRef = React.useRef(false);
+  const lastCheckedRowIndex = React.useRef<number | null>(null);
+  const lastCheckedValue = React.useRef<boolean>(true);
   const [contextMenu, setContextMenu] = React.useState<{ x: number; y: number; rowIndex: number; colIndex: number } | null>(null);
+
+  // Column handler context — shared across all cell update operations
+  const columnHandlerContext = React.useMemo<ColumnHandlerContext>(() => {
+    const ctx: ColumnHandlerContext = {
+      categories,
+      accounts,
+      contraKeywords,
+      keywordMappings,
+    };
+    if (onCategoryChange) {
+      ctx.onCategoryChange = onCategoryChange;
+    }
+    return ctx;
+  }, [categories, accounts, contraKeywords, keywordMappings, onCategoryChange]);
 
   React.useEffect(() => {
     const handleClickOutside = () => setContextMenu(null);
@@ -192,10 +228,6 @@ export function SpreadsheetTable({
       window.removeEventListener("click", handleClickOutside);
     };
   }, []);
-
-  React.useEffect(() => {
-    setTableData(data);
-  }, [data]);
 
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -271,13 +303,8 @@ export function SpreadsheetTable({
   }, [setSelectionFocus]);
 
   const getCellValue = React.useCallback(
-    (row: TransactionRow, colKey: string): string => {
-      if (colKey === "categoryId") return categories.find((c) => c.id === row.categoryId)?.name || "";
-      if (colKey === "accountId") return accounts.find((a) => a.id === row.accountId)?.name || "";
-      if (colKey === "amount") return row.amount !== null && row.amount !== undefined ? row.amount.toString() : "";
-      return String((row as any)[colKey] ?? "");
-    },
-    [categories, accounts]
+    (row: TransactionRow, colKey: string): string => getColumnCellValue(row, colKey, columnHandlerContext),
+    [columnHandlerContext]
   );
 
   // Copy selection range as TSV
@@ -334,7 +361,7 @@ export function SpreadsheetTable({
         hasSelectedCellInRow = true;
 
         const colDef = columns[c];
-        const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : null;
+        const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : null;
         if (key === "notes") continue;
         if (!key) {
           rowValues.push("");
@@ -408,8 +435,8 @@ export function SpreadsheetTable({
     (rowIndex: number, colIndex: number, initialValue?: string) => {
       const colDef = columns[colIndex];
       if (!colDef || !("accessorKey" in colDef)) return;
-      const key = (colDef as any).accessorKey;
-      if (!["date", "item", "amount", "notes", "categoryId", "accountId"].includes(key)) return;
+      const key = (colDef as { accessorKey: string }).accessorKey;
+      if (!isColumnEditable(key)) return;
 
       const row = tableData[rowIndex];
       if (!row) return;
@@ -432,117 +459,8 @@ export function SpreadsheetTable({
     [columns, tableData, viewMode, onEditGroupedItems]
   );
 
-  const applyCellUpdate = React.useCallback(
-    (row: TransactionRow, key: string, valToSave: string) => {
-      if (key === "amount") {
-        const parsed = parseFloat(valToSave.replace(/\./g, "").replace(",", "."));
-        let newAmount = isNaN(parsed) ? null : parsed;
-        
-        if (newAmount !== null && row.categoryId) {
-          const catName = categories.find((c) => c.id === row.categoryId)?.name;
-          if (catName) {
-            const sign = getCategorySign(catName);
-            const isContraItem = contraKeywords.some((kw) => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
-            if (sign === "income") newAmount = Math.abs(newAmount);
-            else if (sign === "expense") {
-              if (!(isContraItem && newAmount > 0)) {
-                newAmount = -Math.abs(newAmount);
-              }
-            }
-          }
-        }
-        (row as any)[key] = newAmount;
-      } else if (key === "categoryId") {
-        const matched = categories.find((c) => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
-        const oldVal = (row as any)[key];
-        const newVal = matched ? matched.id : null;
-        (row as any)[key] = newVal;
-        row.isCategoryManuallySet = true;
-
-        if (newVal) {
-          row.isUnmappedItem = false;
-        }
-
-        if (oldVal !== newVal && newVal) {
-          onCategoryChange?.(row.id as string, row.item as string, newVal);
-        }
-
-        // If category is manually edited, auto-adjust the amount sign
-        if (typeof row.amount === "number") {
-          const catName = categories.find((c) => c.id === newVal)?.name;
-          if (catName) {
-            const sign = getCategorySign(catName);
-            const isContraItem = contraKeywords.some((kw) => (row.item as string).toLowerCase().includes(kw.toLowerCase()));
-
-            if (sign === "income") row.amount = Math.abs(row.amount);
-            else if (sign === "expense") {
-              if (!(isContraItem && row.amount > 0)) {
-                row.amount = -Math.abs(row.amount);
-              }
-            }
-          }
-        }
-      } else if (key === "accountId") {
-        const matched = accounts.find((c) => c.name.toLowerCase() === valToSave.toLowerCase() || c.id === valToSave);
-        (row as any)[key] = matched ? matched.id : null;
-      } else if (key === "item") {
-        (row as any)[key] = valToSave;
-        let sum = 0;
-        let hasPrice = false;
-        valToSave.split("\n").forEach((line: string) => {
-          const match = line.match(/=>\s*([\d\.]+)k?/i);
-          if (match && match[1]) {
-            hasPrice = true;
-            const val = parseFloat(match[1]);
-            const rawPrice = line.toLowerCase().includes("k") ? val * 1000 : val;
-            const isContraItem = contraKeywords.some((kw) => line.toLowerCase().includes(kw.toLowerCase()));
-            if (isContraItem) {
-              sum -= rawPrice;
-            } else {
-              sum += rawPrice;
-            }
-          }
-        });
-        if (hasPrice) {
-          const currentSign = (row.amount ?? -1) < 0 ? -1 : 1;
-          (row as any).amount = sum * currentSign;
-        }
-        
-        row.isCategoryManuallySet = false;
-
-        if (valToSave.trim() && keywordMappings.length > 0) {
-          const lowerItem = valToSave.toLowerCase().trim();
-          const match = keywordMappings.find(m => lowerItem.includes(m.keyword.toLowerCase()));
-
-          if (match) {
-            row.isUnmappedItem = false;
-            if (!row.isCategoryManuallySet) {
-              row.categoryId = match.categoryId;
-              const catName = categories.find((c) => c.id === match.categoryId)?.name;
-              if (catName && typeof row.amount === "number") {
-                const sign = getCategorySign(catName);
-                const isContraItem = contraKeywords.some((kw) => lowerItem.includes(kw.toLowerCase()));
-                if (sign === "income") row.amount = Math.abs(row.amount);
-                else if (sign === "expense") {
-                  if (!(isContraItem && row.amount > 0)) {
-                    row.amount = -Math.abs(row.amount);
-                  }
-                }
-              }
-            }
-          } else {
-            row.categoryId = null;
-            row.isUnmappedItem = true;
-          }
-        } else {
-          row.isUnmappedItem = false;
-        }
-      } else {
-        (row as any)[key] = valToSave;
-      }
-    },
-    [categories, accounts, onCategoryChange, contraKeywords, keywordMappings]
-  );
+  // Cell update is delegated to per-column handlers via the registry.
+  // See column-handlers.ts for each column's specific update logic.
 
   const saveEdit = React.useCallback(
     (rowIndex: number, colIndex: number, explicitValue?: string) => {
@@ -557,14 +475,14 @@ export function SpreadsheetTable({
         if (!colDef || !("accessorKey" in colDef)) {
           return null;
         }
-        const key = (colDef as any).accessorKey;
+        const key = (colDef as { accessorKey: string }).accessorKey;
         const newData = [...tableData];
         const rowData = table.getRowModel().rows[rowIndex];
         const origIndex = rowData ? rowData.index : rowIndex;
         const row = { ...newData[origIndex] } as TransactionRow;
         const valToSave = explicitValue !== undefined ? explicitValue : editValue;
 
-        applyCellUpdate(row, key, valToSave);
+        applyColumnUpdate(row, key, valToSave, columnHandlerContext);
 
         newData[origIndex] = row as TransactionRow;
         setTableData(newData);
@@ -572,7 +490,141 @@ export function SpreadsheetTable({
         return null;
       });
     },
-    [columns, editValue, tableData, applyCellUpdate, onDataChange, table]
+    [columns, editValue, tableData, columnHandlerContext, onDataChange, table]
+  );
+
+  // --- Navigation helpers (shared across all editor types) ---
+
+  const saveAndMoveDown = React.useCallback(
+    (rowIndex: number, colIndex: number, value?: string) => {
+      saveEdit(rowIndex, colIndex, value);
+      const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+      setSelectionAnchor({ rowIndex: nextRow, colIndex });
+      setSelectionFocus({ rowIndex: nextRow, colIndex });
+      focusCell(nextRow, colIndex);
+    },
+    [saveEdit, tableData, focusCell, setSelectionAnchor, setSelectionFocus]
+  );
+
+  const saveAndMoveRight = React.useCallback(
+    (rowIndex: number, colIndex: number, value?: string) => {
+      saveEdit(rowIndex, colIndex, value);
+      const nextCol = Math.min(columns.length - 1, colIndex + 1);
+      setSelectionAnchor({ rowIndex, colIndex: nextCol });
+      setSelectionFocus({ rowIndex, colIndex: nextCol });
+      focusCell(rowIndex, nextCol);
+    },
+    [saveEdit, columns, focusCell, setSelectionAnchor, setSelectionFocus]
+  );
+
+  const cancelEdit = React.useCallback(
+    (rowIndex: number, colIndex: number) => {
+      setEditingCell(null);
+      focusCell(rowIndex, colIndex);
+    },
+    [focusCell]
+  );
+
+  // --- Checkbox click handler (supports Shift+click range selection) ---
+
+  const handleCheckboxClick = React.useCallback(
+    (rowIndex: number, value: boolean) => {
+      if (checkboxShiftRef.current && lastCheckedRowIndex.current !== null) {
+        // Shift+click: select or deselect all rows from last checked to current
+        const start = Math.min(lastCheckedRowIndex.current, rowIndex);
+        const end = Math.max(lastCheckedRowIndex.current, rowIndex);
+        const newSelection: RowSelectionState = { ...rowSelection };
+        for (let i = start; i <= end; i++) {
+          const r = table.getRowModel().rows[i];
+          if (r) {
+            if (lastCheckedValue.current) {
+              newSelection[r.id] = true;
+            } else {
+              delete newSelection[r.id];
+            }
+          }
+        }
+        setRowSelection(newSelection);
+      } else {
+        // Normal click: toggle single row
+        const r = table.getRowModel().rows[rowIndex];
+        if (r) {
+          const newSelection: RowSelectionState = { ...rowSelection };
+          if (value) {
+            newSelection[r.id] = true;
+          } else {
+            delete newSelection[r.id];
+          }
+          setRowSelection(newSelection);
+        }
+        lastCheckedValue.current = value;
+      }
+      lastCheckedRowIndex.current = rowIndex;
+    },
+    [rowSelection, table]
+  );
+
+  // --- Cell editor renderer (dispatches to the right editor per column) ---
+
+  const renderCellEditor = React.useCallback(
+    (colKey: string, rowIndex: number, colIndex: number): React.ReactNode => {
+      switch (colKey) {
+        case "accountId":
+          return (
+            <AccountDropdown
+              options={accounts}
+              recentIds={RECENT_ACCOUNTS}
+              value={accounts.some((a) => a.id === editValue) ? editValue : null}
+              initialSearch={accounts.some((a) => a.id === editValue) ? "" : editValue}
+              onSelect={(newVal) => saveAndMoveDown(rowIndex, colIndex, newVal || "")}
+              onClose={() => cancelEdit(rowIndex, colIndex)}
+            />
+          );
+        case "categoryId":
+          return (
+            <CategoryDropdown
+              options={categories}
+              value={categories.some((c) => c.id === editValue) ? editValue : null}
+              initialSearch={categories.some((c) => c.id === editValue) ? "" : editValue}
+              onSelect={(newVal) => saveAndMoveDown(rowIndex, colIndex, newVal || "")}
+              onClose={() => cancelEdit(rowIndex, colIndex)}
+            />
+          );
+        case "date":
+          return (
+            <input
+              type="date"
+              ref={(el) => {
+                if (el && !el.dataset.pickerOpened) {
+                  el.dataset.pickerOpened = "true";
+                  el.focus();
+                  try {
+                    el.showPicker();
+                  } catch {
+                    // showPicker() can throw if not supported
+                  }
+                }
+              }}
+              className="h-full w-full bg-transparent px-2 py-2 outline-none"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={() => saveEdit(rowIndex, colIndex)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  saveEdit(rowIndex, colIndex);
+                  const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
+                  focusCell(nextRow, colIndex);
+                }
+              }}
+            />
+          );
+        default:
+          return null; // text columns use FloatingEditor, handled in JSX
+      }
+    },
+    [accounts, categories, editValue, saveAndMoveDown, cancelEdit, saveEdit, tableData, focusCell]
   );
 
   // Mouse handlers for drag-selection
@@ -651,9 +703,9 @@ export function SpreadsheetTable({
 
                 const colDef = columns[c];
                 if (colDef && "accessorKey" in colDef) {
-                  const key = (colDef as any).accessorKey;
+                  const key = (colDef as { accessorKey: string }).accessorKey;
                   if (key !== "select" && key !== "actions") {
-                    applyCellUpdate(row, key, val);
+                    applyColumnUpdate(row, key, val, columnHandlerContext);
                     rowChanged = true;
                   }
                 }
@@ -692,9 +744,9 @@ export function SpreadsheetTable({
               if (targetCol >= columns.length) continue;
               const colDef = columns[targetCol];
               if (colDef && "accessorKey" in colDef) {
-                const key = (colDef as any).accessorKey;
+                const key = (colDef as { accessorKey: string }).accessorKey;
                 if (key !== "select" && key !== "actions") {
-                  applyCellUpdate(row, key, currentRow[c] || "");
+                  applyColumnUpdate(row, key, currentRow[c] || "", columnHandlerContext);
                   rowChanged = true;
                 }
               }
@@ -707,14 +759,14 @@ export function SpreadsheetTable({
         return newData;
       });
     },
-    [editingCell, selectionAnchor, selectionRange, multiSelections, columns, applyCellUpdate, onDataChange, table]
+    [editingCell, selectionAnchor, selectionRange, multiSelections, columns, columnHandlerContext, onDataChange, table]
   );
 
   const handleCopyAction = React.useCallback(
     (rIndex: number, cIndex: number) => {
       const colDef = columns[cIndex];
       const isSelectCol = colDef && colDef.id === "select";
-      const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
+      const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : "";
 
       if (selectionRange || multiSelections.length > 0) {
         copySelectionToClipboard();
@@ -743,8 +795,8 @@ export function SpreadsheetTable({
         if (text) {
           try {
             processPasteData(text);
-          } catch (err: any) {
-            Swal.fire("Paste Error", err.message, "error");
+          } catch (err: unknown) {
+            Swal.fire("Paste Error", err instanceof Error ? err.message : String(err), "error");
           }
         }
       })
@@ -758,8 +810,8 @@ export function SpreadsheetTable({
     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
     const colDef = columns[colIndex];
     const isSelectCol = colDef && colDef.id === "select";
-    const key = colDef && "accessorKey" in colDef ? (colDef as any).accessorKey : "";
-    const isDropdown = key === "categoryId" || key === "accountId";
+    const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : "";
+    const isDropdown = isColumnDropdown(key);
 
     if (isEditing) {
       if (isDropdown) return;
@@ -822,9 +874,9 @@ export function SpreadsheetTable({
 
                 const colDef = columns[c];
                 if (colDef && "accessorKey" in colDef) {
-                  const k = (colDef as any).accessorKey;
+                  const k = (colDef as { accessorKey: string }).accessorKey;
                   if (k !== "select" && k !== "actions") {
-                    applyCellUpdate(row, k, "");
+                    applyColumnUpdate(row, k, "", columnHandlerContext);
                     rowChanged = true;
                   }
                 }
@@ -838,7 +890,7 @@ export function SpreadsheetTable({
             const rowData = table.getRowModel().rows[rowIndex];
             const origIndex = rowData ? rowData.index : rowIndex;
             const row = { ...newData[origIndex] } as TransactionRow;
-            applyCellUpdate(row, key, "");
+            applyColumnUpdate(row, key, "", columnHandlerContext);
             newData[origIndex] = row;
             changed = true;
           }
@@ -974,7 +1026,7 @@ export function SpreadsheetTable({
                 <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="hover:bg-muted/30">
                   {row.getVisibleCells().map((cell, colIndex) => {
                     const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
-                    const isDropdown = cell.column.id === "categoryId" || cell.column.id === "accountId";
+                    const isDropdown = isColumnDropdown(cell.column.id);
                     const isSelectCol = cell.column.id === "select";
                     const selected = !isSelectCol && isCellSelected(rowIndex, colIndex);
 
@@ -1037,67 +1089,8 @@ export function SpreadsheetTable({
                           }
                         }}
                       >
-                        {isEditing && cell.column.id === "accountId" ? (
-                          <AccountDropdown
-                            options={accounts}
-                            recentIds={RECENT_ACCOUNTS}
-                            value={accounts.some(a => a.id === editValue) ? editValue : null}
-                            initialSearch={accounts.some(a => a.id === editValue) ? "" : editValue}
-                            onSelect={(newVal) => {
-                              saveEdit(rowIndex, colIndex, newVal || "");
-                              const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
-                              setSelectionAnchor({ rowIndex: nextRow, colIndex });
-                              setSelectionFocus({ rowIndex: nextRow, colIndex });
-                              focusCell(nextRow, colIndex);
-                            }}
-                            onClose={() => {
-                              setEditingCell(null);
-                              focusCell(rowIndex, colIndex);
-                            }}
-                          />
-                        ) : isEditing && cell.column.id === "categoryId" ? (
-                          <CategoryDropdown
-                            options={categories}
-                            value={categories.some(c => c.id === editValue) ? editValue : null}
-                            initialSearch={categories.some(c => c.id === editValue) ? "" : editValue}
-                            onSelect={(newVal) => {
-                              saveEdit(rowIndex, colIndex, newVal || "");
-                              const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
-                              setSelectionAnchor({ rowIndex: nextRow, colIndex });
-                              setSelectionFocus({ rowIndex: nextRow, colIndex });
-                              focusCell(nextRow, colIndex);
-                            }}
-                            onClose={() => {
-                              setEditingCell(null);
-                              focusCell(rowIndex, colIndex);
-                            }}
-                          />
-                        ) : isEditing && cell.column.id === "date" ? (
-                          <input
-                            type="date"
-                            ref={(el) => {
-                              if (el && !el.dataset.pickerOpened) {
-                                el.dataset.pickerOpened = "true";
-                                el.focus();
-                                try {
-                                  el.showPicker();
-                                } catch (err) {}
-                              }
-                            }}
-                            className="h-full w-full bg-transparent px-2 py-2 outline-none"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => saveEdit(rowIndex, colIndex)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                saveEdit(rowIndex, colIndex);
-                                const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
-                                focusCell(nextRow, colIndex);
-                              }
-                            }}
-                          />
+                        {isEditing && (isDropdown || cell.column.id === "date") ? (
+                          renderCellEditor(cell.column.id, rowIndex, colIndex)
                         ) : (
                           <>
                             <div
@@ -1105,32 +1098,28 @@ export function SpreadsheetTable({
                               onDoubleClick={() => {
                                 if (!isSelectCol) startEditing(rowIndex, colIndex);
                               }}
+                              onPointerDown={isSelectCol ? (e) => {
+                                checkboxShiftRef.current = e.shiftKey;
+                              } : undefined}
                             >
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              {isSelectCol ? (
+                                <Checkbox
+                                  checked={row.getIsSelected()}
+                                  onCheckedChange={(value) => handleCheckboxClick(rowIndex, !!value)}
+                                  aria-label="Select row"
+                                />
+                              ) : (
+                                flexRender(cell.column.columnDef.cell, cell.getContext())
+                              )}
                             </div>
                             {isEditing && (
                               <FloatingEditor
                                 initialValue={editValue}
                                 targetCellId={`cell-${tableId}-${rowIndex}-${colIndex}`}
                                 onSave={(val) => saveEdit(rowIndex, colIndex, val)}
-                                onCancel={() => {
-                                  setEditingCell(null);
-                                  focusCell(rowIndex, colIndex);
-                                }}
-                                onNextRow={(val) => {
-                                  saveEdit(rowIndex, colIndex, val);
-                                  const nextRow = Math.min(tableData.length - 1, rowIndex + 1);
-                                  setSelectionAnchor({ rowIndex: nextRow, colIndex });
-                                  setSelectionFocus({ rowIndex: nextRow, colIndex });
-                                  focusCell(nextRow, colIndex);
-                                }}
-                                onNextCol={(val) => {
-                                  saveEdit(rowIndex, colIndex, val);
-                                  const nextCol = Math.min(columns.length - 1, colIndex + 1);
-                                  setSelectionAnchor({ rowIndex, colIndex: nextCol });
-                                  setSelectionFocus({ rowIndex, colIndex: nextCol });
-                                  focusCell(rowIndex, nextCol);
-                                }}
+                                onCancel={() => cancelEdit(rowIndex, colIndex)}
+                                onNextRow={(val) => saveAndMoveDown(rowIndex, colIndex, val)}
+                                onNextCol={(val) => saveAndMoveRight(rowIndex, colIndex, val)}
                               />
                             )}
                           </>

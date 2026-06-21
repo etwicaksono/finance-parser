@@ -18,17 +18,17 @@ export default async function HomePage() {
     getContraKeywords()
   ]);
   
-  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: any) => ({
+  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: { id: string; name: string }) => ({
     id: cat.id,
     name: cat.name,
   }));
 
-  const accounts: AccountOption[] = (accountsRes.data || []).map((acc: any) => ({
+  const accounts: AccountOption[] = (accountsRes.data || []).map((acc: { id: string; name: string }) => ({
     id: acc.id,
     name: acc.name,
   }));
 
-  const mappings: KeywordMapping[] = (mappingsRes.data || []).map((m: any) => ({
+  const mappings: KeywordMapping[] = (mappingsRes.data || []).map((m: { keyword: string; categoryId: string | null; usageCount?: number }) => ({
     keyword: m.keyword,
     categoryId: m.categoryId,
     usageCount: m.usageCount || 0,
@@ -37,7 +37,7 @@ export default async function HomePage() {
   const geminiModels = process.env.GEMINI_MODELS?.split(",") || ["gemini-2.5-flash"];
   const swiftrouterModels = process.env.SWIFTROUTER_MODELS?.split(",") || ["google/gemini-2.5-flash"];
 
-  const contraKeywords = (contraKeywordsRes.data || []).map((k: any) => k.keyword);
+  const contraKeywords = (contraKeywordsRes.data || []).map((k: { keyword: string }) => k.keyword);
 
   return (
     <HomeClient 

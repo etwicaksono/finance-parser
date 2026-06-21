@@ -32,8 +32,7 @@ async function runMigrations(): Promise<void> {
 
   const db = drizzle(pool, { schema, casing: "snake_case" });
 
-  // eslint-disable-next-line no-console
-  console.log("⏳ Running migrations...");
+  console.warn("⏳ Running migrations...");
 
   const start = Date.now();
 
@@ -43,14 +42,12 @@ async function runMigrations(): Promise<void> {
 
   const duration = Date.now() - start;
 
-  // eslint-disable-next-line no-console
-  console.log(`✅ Migrations applied successfully in ${duration}ms`);
+  console.warn(`✅ Migrations applied successfully in ${duration}ms`);
 
   await pool.end();
 }
 
 runMigrations().catch((err: unknown) => {
-  // eslint-disable-next-line no-console
   console.error("❌ Migration failed:", err);
   process.exit(1);
 });

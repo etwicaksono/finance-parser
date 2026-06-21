@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 
 interface FloatingEditorProps {
@@ -23,12 +23,12 @@ export function FloatingEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Position recalculation
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const el = document.getElementById(targetCellId);
     if (el) {
       setRect(el.getBoundingClientRect());
     }
-  };
+  }, [targetCellId]);
 
   useEffect(() => {
     updatePosition();
@@ -39,10 +39,10 @@ export function FloatingEditor({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [targetCellId]);
+  }, [updatePosition]);
 
   // Handle auto-grow and shifting upwards
-  const handleInput = () => {
+  const handleInput = useCallback(() => {
     const el = textareaRef.current;
     if (!el || !rect) return;
     
@@ -78,11 +78,11 @@ export function FloatingEditor({
       el.style.height = `${newHeight}px`;
       el.style.overflowY = "hidden";
     }
-  };
+  }, [rect]);
 
   useEffect(() => {
     handleInput();
-  }, [value, rect]);
+  }, [value, rect, handleInput]);
 
 
   if (!rect) return null;

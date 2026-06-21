@@ -11,12 +11,12 @@ export default async function SettingsPage() {
     getAccounts(),
   ]);
   
-  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: any) => ({
+  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: { id: string; name: string }) => ({
     id: cat.id,
     name: cat.name,
   }));
 
-  const accounts: AccountOption[] = (accountsRes.data || []).map((acc: any) => ({
+  const accounts: AccountOption[] = (accountsRes.data || []).map((acc: { id: string; name: string }) => ({
     id: acc.id,
     name: acc.name,
   }));

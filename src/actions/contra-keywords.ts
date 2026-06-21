@@ -9,9 +9,9 @@ export async function getContraKeywords() {
   try {
     const data = await db.select().from(contraKeywords).orderBy(contraKeywords.keyword);
     return { data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching contra keywords:", error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
@@ -28,9 +28,9 @@ export async function addContraKeyword(keyword: string) {
 
     revalidatePath("/settings");
     return { data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error adding contra keyword:", error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
@@ -39,9 +39,9 @@ export async function deleteContraKeyword(id: string) {
     await db.delete(contraKeywords).where(eq(contraKeywords.id, id));
     revalidatePath("/settings");
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error deleting contra keyword:", error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
@@ -68,8 +68,8 @@ export async function seedDefaultContraKeywords() {
       revalidatePath("/settings");
     }
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error seeding contra keywords:", error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : "Unknown error" };
   }
 }

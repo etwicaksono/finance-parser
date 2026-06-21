@@ -16,7 +16,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { TransactionRow, SessionImage } from "@/types";
-import { getSessions, createSession, updateSession, deleteSession } from "@/actions/sessions";
+import { getSessions, updateSession, deleteSession } from "@/actions/sessions";
 import { toast } from "sonner";
 
 export interface SessionData {
@@ -28,12 +28,12 @@ export interface SessionData {
 
 interface SessionSwitcherProps {
   currentSessionId: string | null;
-  onSessionChange: (sessionId: string, data: TransactionRow[], images?: SessionImage[], metadata?: any) => void;
+  onSessionChange: (sessionId: string, data: TransactionRow[], images?: SessionImage[], metadata?: Record<string, unknown>) => void;
   onNewSession: () => void;
   rawTransactions: TransactionRow[];
 }
 
-export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSession, rawTransactions }: SessionSwitcherProps) {
+export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSession, rawTransactions: _rawTransactions }: SessionSwitcherProps) {
   const [open, setOpen] = React.useState(false);
   const [sessions, setSessions] = React.useState<SessionData[]>([]);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -59,7 +59,7 @@ export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSessio
       const { getSessionById } = await import("@/actions/sessions");
       const session = await getSessionById(id);
       if (session) {
-        onSessionChange(session.id, (session.data as TransactionRow[]) || [], (session.images as SessionImage[]) || [], session.metadata);
+        onSessionChange(session.id, (session.data as TransactionRow[]) || [], (session.images as SessionImage[]) || [], (session.metadata as Record<string, unknown>) || {});
       }
     } catch (error) {
       console.error(error);

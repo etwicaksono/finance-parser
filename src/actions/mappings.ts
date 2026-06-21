@@ -101,9 +101,10 @@ export async function addMapping(keyword: string, categoryId: string, createdBy:
       
     revalidatePath("/");
     return { data: inserted[0] };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to add mapping:", error);
-    if (error?.message?.includes("UNIQUE constraint failed") || error?.message?.includes("duplicate key")) {
+    const msg = error instanceof Error ? error.message : "";
+    if (msg.includes("UNIQUE constraint failed") || msg.includes("duplicate key")) {
       return { error: "This keyword already exists" };
     }
     return { error: "Failed to add mapping" };
@@ -181,9 +182,10 @@ export async function updateMapping(id: string, newKeyword: string, newCategoryI
     revalidatePath("/");
     revalidatePath("/settings");
     return { data: updated[0] };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update mapping:", error);
-    if (error?.message?.includes("UNIQUE constraint failed") || error?.message?.includes("duplicate key")) {
+    const msg = error instanceof Error ? error.message : "";
+    if (msg.includes("UNIQUE constraint failed") || msg.includes("duplicate key")) {
       return { error: "This keyword already exists" };
     }
     return { error: "Failed to update mapping." };

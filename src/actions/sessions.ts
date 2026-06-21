@@ -37,7 +37,7 @@ export async function getSessionById(id: string) {
   }
 }
 
-export async function createSession(name: string, data: TransactionRow[] = [], images: (string | SessionImage)[] = [], metadata: any = {}) {
+export async function createSession(name: string, data: TransactionRow[] = [], images: (string | SessionImage)[] = [], metadata: Record<string, unknown> = {}) {
   try {
     const result = await db.insert(sessions).values({
       name,
@@ -52,7 +52,7 @@ export async function createSession(name: string, data: TransactionRow[] = [], i
   }
 }
 
-export async function updateSession(id: string, updates: { name?: string; data?: TransactionRow[]; images?: (string | SessionImage)[]; metadata?: any }) {
+export async function updateSession(id: string, updates: { name?: string; data?: TransactionRow[]; images?: (string | SessionImage)[]; metadata?: Record<string, unknown> }) {
   try {
     const result = await db.update(sessions)
       .set(updates)

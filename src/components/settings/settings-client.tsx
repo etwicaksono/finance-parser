@@ -16,7 +16,7 @@ interface SettingsClientProps {
   accounts: AccountOption[];
 }
 
-export function SettingsClient({ categories, accounts }: SettingsClientProps) {
+export function SettingsClient({ categories, accounts: _accounts }: SettingsClientProps) {
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="flex h-14 items-center gap-4 border-b bg-card px-4 lg:px-6">

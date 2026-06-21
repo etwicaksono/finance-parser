@@ -2,8 +2,6 @@ import { describe, it, expect } from "vitest";
 import { extractChatDate, extractExplicitDate } from "./date-parser";
 
 describe("extractChatDate", () => {
-  const currentYear = new Date().getFullYear();
-
   it("parses WhatsApp M/D format", () => {
     // English US format
     expect(extractChatDate("[5/16, 11:38] Name: ...", 2026)).toBe("2026-05-16");

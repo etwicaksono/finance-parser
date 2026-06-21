@@ -42,7 +42,7 @@ function getPublicIdFromUrl(url: string): string | null {
     }
     
     return path;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

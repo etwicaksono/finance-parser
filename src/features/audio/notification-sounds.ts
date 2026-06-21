@@ -3,10 +3,10 @@ export type SoundTone = "chime" | "success" | "beep" | "error";
 export function playNotification(tone: SoundTone = "success") {
   // AudioContext might be blocked by browser policy until user interacts with the page
   // But parsing only happens after clicking a button or pressing enter, so we should be good.
-  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContext) return;
+  const AudioContextClass: typeof AudioContext = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextClass) return;
 
-  const ctx = new AudioContext();
+  const ctx = new AudioContextClass();
 
   const playTone = (freq: number, type: OscillatorType, startTime: number, duration: number, vol = 0.1) => {
     const osc = ctx.createOscillator();

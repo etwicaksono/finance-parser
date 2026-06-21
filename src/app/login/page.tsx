@@ -28,7 +28,7 @@ export default function LoginPage() {
       }
       router.push("/");
       router.refresh();
-    } catch (error: any) {
+    } catch {
       toast.error(<ErrorToast title="Login Gagal" message={"Terjadi kesalahan pada server"} />);
     } finally {
       setLoading(false);

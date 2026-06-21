@@ -86,7 +86,7 @@ export function AiModelSelector({
                     <CommandItem
                       key={model}
                       value={model}
-                      onSelect={(currentValue) => {
+                      onSelect={(_currentValue) => {
                         onChange({ ...config, activeModel: model });
                         setOpenCombobox(false);
                       }}

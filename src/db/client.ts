@@ -39,8 +39,10 @@ export const db = drizzle(pool, {
 // occur when multiple Next.js build workers run migrations in parallel.
 migrate(db, {
   migrationsFolder: path.resolve(process.cwd(), "src/db/migrations"),
-}).catch((err: any) => {
-  if (err?.cause?.code === "42P07" || err?.message?.includes("already exists")) {
+}).catch((err: unknown) => {
+  const cause = err instanceof Error && err.cause ? (err.cause as { code?: string }) : null;
+  const msg = err instanceof Error ? err.message : "";
+  if (cause?.code === "42P07" || msg.includes("already exists")) {
     // Tables already exist — safe to ignore during parallel builds.
     return;
   }
