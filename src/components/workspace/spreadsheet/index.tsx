@@ -9,7 +9,7 @@ import {
   RowSelectionState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy } from "lucide-react";
 import Swal from "sweetalert2";
 
 import {
@@ -55,8 +55,6 @@ interface SpreadsheetTableProps {
   onAutoMapRows?: (rowIndices: number[], useAI: boolean) => void;
   keywordMappings?: KeywordMapping[];
   emptyMessage?: string;
-  loading?: boolean;
-  loadingText?: string;
 }
 
 const RECENT_ACCOUNTS: string[] = [];
@@ -75,8 +73,6 @@ export function SpreadsheetTable({
   onAutoMapRows,
   keywordMappings = [],
   emptyMessage = "No data available.",
-  loading = false,
-  loadingText = "Loading...",
 }: SpreadsheetTableProps) {
   const tableId = React.useId().replace(/:/g, "");
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
@@ -998,16 +994,7 @@ export function SpreadsheetTable({
         </div>
       </div>
       <div className="flex-1 min-h-0 relative" ref={scrollContainerRef}>
-        <Table
-          className="border-collapse"
-          containerClassName="absolute inset-0 overflow-auto pb-32 table-scroll-container"
-          overlay={loading && (
-            <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-background/90">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-              <p className="text-sm font-medium">{loadingText}</p>
-            </div>
-          )}
-        >
+        <Table className="border-collapse" containerClassName="absolute inset-0 overflow-auto pb-32 table-scroll-container">
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
