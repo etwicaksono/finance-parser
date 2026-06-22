@@ -30,14 +30,16 @@ interface SessionSwitcherProps {
   currentSessionId: string | null;
   onSessionChange: (sessionId: string, data: TransactionRow[], images?: SessionImage[], metadata?: Record<string, unknown>) => void;
   onNewSession: () => void;
+  onLoadingChange?: (loading: boolean) => void;
   rawTransactions: TransactionRow[];
 }
 
-export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSession, rawTransactions: _rawTransactions }: SessionSwitcherProps) {
+export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSession, onLoadingChange, rawTransactions: _rawTransactions }: SessionSwitcherProps) {
   const [open, setOpen] = React.useState(false);
   const [sessions, setSessions] = React.useState<SessionData[]>([]);
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState("");
+  const loadTokenRef = React.useRef<string | null>(null);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
 
@@ -53,17 +55,28 @@ export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSessio
   const handleSelectSession = async (id: string) => {
     setOpen(false);
     if (id === currentSessionId) return;
-    
-    // fetch session data
+
+    // Set token so earlier in-flight loads can be discarded
+    loadTokenRef.current = id;
+    onLoadingChange?.(true);
+
     try {
       const { getSessionById } = await import("@/actions/sessions");
       const session = await getSessionById(id);
+
+      // Discard if a newer selection or "New" has superseded this one
+      if (loadTokenRef.current !== id) return;
+
       if (session) {
         onSessionChange(session.id, (session.data as TransactionRow[]) || [], (session.images as SessionImage[]) || [], (session.metadata as Record<string, unknown>) || {});
       }
+      onLoadingChange?.(false);
     } catch (error) {
-      console.error(error);
-      toast.error("Gagal memuat sesi");
+      if (loadTokenRef.current === id) {
+        onLoadingChange?.(false);
+        console.error(error);
+        toast.error("Gagal memuat sesi");
+      }
     }
   };
 
@@ -223,7 +236,7 @@ export function SessionSwitcher({ currentSessionId, onSessionChange, onNewSessio
         </div>
       )}
 
-      <Button variant="default" size="sm" onClick={onNewSession} className="gap-1 h-9">
+      <Button variant="default" size="sm" onClick={() => { loadTokenRef.current = "new"; onLoadingChange?.(false); onNewSession(); }} className="gap-1 h-9">
         <Plus className="h-4 w-4" />
         New
       </Button>
