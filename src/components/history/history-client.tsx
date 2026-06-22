@@ -283,70 +283,73 @@ export function HistoryClient() {
           </div>
 
           {/* Session list */}
-          <div className="flex-1 overflow-y-auto">
-            {isLoadingList && sessionList.length === 0 ? (
-              <div className="flex items-center justify-center h-40">
+          <div className="relative flex-1 min-h-0">
+            {isLoadingList && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/90">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : sessionList.length === 0 ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                {debouncedSearch ? `No sessions found for "${debouncedSearch}"` : "No sessions yet."}
-              </div>
-            ) : (
-              sessionList.map((s) => (
-                <div
-                  key={s.id}
-                  className={`p-3 border-b cursor-pointer transition-colors ${
-                    selectedId === s.id ? "bg-accent" : "hover:bg-muted/50"
-                  }`}
-                  onClick={() => setSelectedId(s.id)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{s.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {format(new Date(s.updatedAt), "dd MMM yyyy HH:mm")}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-xs text-muted-foreground">
-                          {s.rowCount} {s.rowCount === 1 ? "row" : "rows"}
-                        </span>
-                        {s.imageCount > 0 && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-                            <ImageIcon className="h-3 w-3" />
-                            {s.imageCount}
-                          </span>
-                        )}
-                        {s.sources.filter(Boolean).map((src) => {
-                          const cfg = SOURCE_CONFIG[src];
-                          if (!cfg) return null;
-                          const Icon = cfg.icon;
-                          return (
-                            <span
-                              key={src}
-                              className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${cfg.color}`}
-                            >
-                              <Icon className="h-2.5 w-2.5" />
-                              {cfg.label}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <button
-                      className="text-muted-foreground hover:text-destructive shrink-0 p-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(s.id, s.name);
-                      }}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))
             )}
+            <div className="flex-1 overflow-y-auto h-full">
+              {sessionList.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  {debouncedSearch ? `No sessions found for "${debouncedSearch}"` : "No sessions yet."}
+                </div>
+              ) : (
+                sessionList.map((s) => (
+                  <div
+                    key={s.id}
+                    className={`p-3 border-b cursor-pointer transition-colors ${
+                      selectedId === s.id ? "bg-accent" : "hover:bg-muted/50"
+                    }`}
+                    onClick={() => setSelectedId(s.id)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{s.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {format(new Date(s.updatedAt), "dd MMM yyyy HH:mm")}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-xs text-muted-foreground">
+                            {s.rowCount} {s.rowCount === 1 ? "row" : "rows"}
+                          </span>
+                          {s.imageCount > 0 && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+                              <ImageIcon className="h-3 w-3" />
+                              {s.imageCount}
+                            </span>
+                          )}
+                          {s.sources.filter(Boolean).map((src) => {
+                            const cfg = SOURCE_CONFIG[src];
+                            if (!cfg) return null;
+                            const Icon = cfg.icon;
+                            return (
+                              <span
+                                key={src}
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${cfg.color}`}
+                              >
+                                <Icon className="h-2.5 w-2.5" />
+                                {cfg.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <button
+                        className="text-muted-foreground hover:text-destructive shrink-0 p-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(s.id, s.name);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           {/* Pagination */}
@@ -383,19 +386,25 @@ export function HistoryClient() {
         </div>
 
         {/* Right: Session detail */}
-        <div className="flex-1 overflow-y-auto">
-          {!selectedId || !detail ? (
-            <div className="flex items-center justify-center h-full">
-              {isLoadingDetail ? (
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {sessionList.length > 0 ? "Select a session to view details" : "No sessions to display"}
-                </p>
-              )}
+        <div className="relative flex-1 min-h-0">
+          {isLoadingDetail && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/90">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : (
-            <div className="p-6 space-y-6 max-w-4xl">
+          )}
+          <div className="flex-1 overflow-y-auto h-full">
+            {!selectedId || !detail ? (
+              <div className="flex items-center justify-center h-full">
+                {isLoadingDetail ? (
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {sessionList.length > 0 ? "Select a session to view details" : "No sessions to display"}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="p-6 space-y-6 max-w-4xl">
               {/* Detail header */}
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -578,7 +587,8 @@ export function HistoryClient() {
                 )}
               </div>
             </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

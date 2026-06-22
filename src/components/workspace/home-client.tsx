@@ -22,7 +22,6 @@ import { GroupedItemsModal } from "./grouped-items-modal";
 import { ManualJsonInput } from "@/components/workspace/manual-json-input";
 import { scanReceiptImages } from "@/actions/scan-receipt";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ErrorToast } from "@/components/ui/error-toast";
 import { AiModelSelector } from "@/components/ui/ai-model-selector";
@@ -71,11 +70,13 @@ export function HomeClient({
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<import("@/types").SessionMetadata>({});
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [receiptFilter, setReceiptFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>(() => ["unmapped", ...initialCategories.map(c => c.id)]);
 
   React.useEffect(() => {
+    setIsLoadingSession(true);
     import("@/actions/sessions").then(async ({ getSessions, getSessionById }) => {
       // If a specific session was requested via ?session=uuid, load it
       if (initialSessionId) {
@@ -85,6 +86,7 @@ export function HomeClient({
           setRawTransactions((sess.data as TransactionRow[]) || []);
           setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
+          setIsLoadingSession(false);
           return;
         }
       }
@@ -99,7 +101,11 @@ export function HomeClient({
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
         }
       }
-    }).catch(console.error);
+      setIsLoadingSession(false);
+    }).catch((err) => {
+      console.error(err);
+      setIsLoadingSession(false);
+    });
   }, []);
 
   const handleNewSession = async () => {
@@ -124,11 +130,12 @@ export function HomeClient({
             const recent = await getSessionById(sessions[0].id);
             if (recent) {
               const recentData = (recent.data as TransactionRow[]) || [];
-              const isEmpty = recentData.length === 0 ||
-                (recentData.length === 1 && (
-                  !recentData[0]?.item || recentData[0].item.trim() === "" ||
+              const recentImages = (recent.images as SessionImage[]) || [];
+              const isEmpty = (recentData.length === 0 && recentImages.length === 0) ||
+                (recentData.length === 1 && recentImages.length === 0 &&
+                  (!recentData[0]?.item || recentData[0].item.trim() === "") &&
                   recentData[0]?.amount == null
-                ));
+                );
 
               if (isEmpty) {
                 // Reuse this session: rename and update with new data
@@ -729,12 +736,6 @@ export function HomeClient({
         }
         spreadsheetPanel={
           <div className="relative flex-1 min-h-0 flex flex-col">
-            {processingText && (
-              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/50 backdrop-blur-sm">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-sm font-medium">{processingText}</p>
-              </div>
-            )}
             <div className="flex items-center justify-between mb-2 mx-4 mt-2">
               <div className="flex bg-muted rounded-md p-1 shrink-0">
                 <button
@@ -752,7 +753,7 @@ export function HomeClient({
               </div>
               
               <div className="flex gap-2 items-center flex-1 ml-4 overflow-x-auto no-scrollbar">
-                <select 
+                <select
                   className="h-9 rounded-md border border-input bg-transparent px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={sourceFilter}
                   onChange={(e) => setSourceFilter(e.target.value)}
@@ -765,7 +766,7 @@ export function HomeClient({
                 </select>
 
                 {uniqueReceipts.length > 0 && (
-                  <select 
+                  <select
                     className="h-9 rounded-md border border-input bg-transparent px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     value={receiptFilter}
                     onChange={(e) => setReceiptFilter(e.target.value)}
@@ -786,7 +787,7 @@ export function HomeClient({
               </div>
               
               <div className="shrink-0">
-                <SessionSwitcher 
+                <SessionSwitcher
                   currentSessionId={currentSessionId}
                   onSessionChange={(id, data, images, metadata) => {
                     setCurrentSessionId(id);
@@ -796,18 +797,19 @@ export function HomeClient({
                     setGroupAmountOverrides({});
                   }}
                   onNewSession={handleNewSession}
+                  onLoadingChange={setIsLoadingSession}
                   rawTransactions={rawTransactions}
                 />
               </div>
             </div>
-            <SpreadsheetTable 
-              data={displayTransactions} 
+            <SpreadsheetTable
+              data={displayTransactions}
               viewMode={viewMode}
               categories={initialCategories}
               accounts={initialAccounts}
               contraKeywords={initialContraKeywords}
               keywordMappings={localMappings}
-              onDataChange={handleDataChange} 
+              onDataChange={handleDataChange}
               onEditGroupedItems={(row) => setEditingGroupRow(row)}
               onCategoryChange={handleCategoryChange}
               onCopyRows={handleCopyRows}
@@ -828,6 +830,8 @@ export function HomeClient({
                 activeTab === "scan" ? "Tidak ada data. Scan/unggah foto nota belanja Anda di panel kiri." :
                 "Tidak ada data. Ketik input JSON secara manual di samping."
               }
+              loading={!!processingText || isLoadingSession}
+              loadingText={processingText || "Loading session..."}
             />
             
             <GroupedItemsModal
