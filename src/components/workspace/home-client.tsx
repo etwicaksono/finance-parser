@@ -71,6 +71,8 @@ export function HomeClient({
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<import("@/types").SessionMetadata>({});
   const [isLoadingSession, setIsLoadingSession] = useState(false);
+  // Ref to skip the first debounce update after loading a session
+  const justLoadedRef = React.useRef(false);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [receiptFilter, setReceiptFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>(() => ["unmapped", ...initialCategories.map(c => c.id)]);
@@ -86,6 +88,7 @@ export function HomeClient({
           setRawTransactions((sess.data as TransactionRow[]) || []);
           setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
+          justLoadedRef.current = true;
           setIsLoadingSession(false);
           return;
         }
@@ -99,6 +102,7 @@ export function HomeClient({
           setRawTransactions((sess.data as TransactionRow[]) || []);
           setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
+          justLoadedRef.current = true;
         }
       }
       setIsLoadingSession(false);
@@ -117,6 +121,9 @@ export function HomeClient({
   };
 
   React.useEffect(() => {
+    // Don't auto-create or auto-save while a session is being loaded from DB
+    if (isLoadingSession) return;
+
     if (!currentSessionId) {
       if (rawTransactions.length > 0 || sessionImages.length > 0) {
         // Auto-create session on first data
@@ -161,13 +168,19 @@ export function HomeClient({
       return;
     }
     
+    // Skip debounce update right after loading a session (data came from DB, not user)
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      return;
+    }
+    
     const timer = setTimeout(() => {
       import("@/actions/sessions").then(({ updateSession }) => {
         updateSession(currentSessionId, { data: rawTransactions, images: sessionImages, metadata: sessionMetadata as Record<string, unknown> }).catch(console.error);
       });
     }, 1000);
     return () => clearTimeout(timer);
-  }, [rawTransactions, sessionImages, sessionMetadata, currentSessionId]);
+  }, [rawTransactions, sessionImages, sessionMetadata, currentSessionId, isLoadingSession]);
 
 
 
@@ -790,6 +803,7 @@ export function HomeClient({
                 <SessionSwitcher
                   currentSessionId={currentSessionId}
                   onSessionChange={(id, data, images, metadata) => {
+                    justLoadedRef.current = true;
                     setCurrentSessionId(id);
                     setRawTransactions(data);
                     setSessionImages(images || []);
