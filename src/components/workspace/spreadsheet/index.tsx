@@ -9,7 +9,7 @@ import {
   RowSelectionState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, Loader2, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 
 import {
@@ -423,6 +423,18 @@ export function SpreadsheetTable({
       }
     });
   }, [table, categories, accounts, onCopyRows, includeHeader]);
+
+  const handleDeleteSelectedRows = React.useCallback(() => {
+    const selectedRows = table.getFilteredSelectedRowModel().rows;
+    if (selectedRows.length === 0) return;
+
+    const selectedIds = new Set(selectedRows.map((r) => r.original.id));
+    const newData = tableData.filter((row) => !selectedIds.has(row.id));
+
+    setTableData(newData);
+    setRowSelection({});
+    onDataChange?.(newData);
+  }, [table, tableData, onDataChange]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
     isKeyboardNavigating.current = true;
@@ -970,6 +982,31 @@ export function SpreadsheetTable({
             <Button size="sm" variant="default" onClick={copySelectionToClipboard} className={copyFlash ? "bg-green-600" : ""}>
               <Copy className="mr-2 h-4 w-4" />
               Copy Selection
+            </Button>
+          )}
+          {Object.keys(rowSelection).length > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                const count = Object.keys(rowSelection).length;
+                Swal.fire({
+                  title: "Hapus baris terpilih?",
+                  text: `${count} baris akan dihapus.`,
+                  icon: "warning",
+                  showCancelButton: true,
+                  confirmButtonText: "Hapus",
+                  cancelButtonText: "Batal",
+                  confirmButtonColor: "#dc2626",
+                }).then((result) => {
+                  if (result.isConfirmed) {
+                    handleDeleteSelectedRows();
+                  }
+                });
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete ({Object.keys(rowSelection).length})
             </Button>
           )}
           <div className="flex items-center space-x-2 mr-2">
