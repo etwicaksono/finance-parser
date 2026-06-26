@@ -131,6 +131,14 @@ const itemHandler: ColumnHandler = {
   applyUpdate: (row, value, ctx) => {
     row.item = value;
 
+    if (!value.trim()) {
+      row.amount = null;
+      row.categoryId = null;
+      row.isUnmappedItem = false;
+      row.isCategoryManuallySet = false;
+      return;
+    }
+
     // Parse inline price annotations (e.g. "Boba => 25k")
     let sum = 0;
     let hasPrice = false;

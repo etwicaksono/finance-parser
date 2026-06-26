@@ -59,7 +59,7 @@ export function ManualJsonInput({ value, onChange, onParse, onClearOutput }: Man
       <div className="flex flex-col gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-2 font-semibold">
           <FileJson className="h-4 w-4 text-primary" />
-          <span>Manual AI</span>
+          <span>JSON Input</span>
         </div>
         <div className="flex gap-2">
           <Button

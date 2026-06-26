@@ -9,6 +9,7 @@ import {
   RowSelectionState,
   useReactTable,
 } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Loader2, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -31,6 +32,7 @@ import { FloatingEditor } from "../floating-editor";
 
 import { getColumns } from "./columns";
 import { SpreadsheetContextMenu } from "./context-menu";
+import { SelectionStatusBar, type StatMode } from "./selection-status-bar";
 import { useSpreadsheetSelection } from "./hooks/use-spreadsheet-selection";
 import { CellPos } from "./types";
 import {
@@ -81,6 +83,7 @@ export function SpreadsheetTable({
   const tableId = React.useId().replace(/:/g, "");
   const [tableData, setTableData] = React.useState<TransactionRow[]>(data);
   const [editingCell, setEditingCell] = React.useState<CellPos | null>(null);
+  const [statMode, setStatMode] = React.useState<StatMode>("sum");
   const [editValue, setEditValue] = React.useState<string>("");
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -111,6 +114,9 @@ export function SpreadsheetTable({
     const lastRow = tableData[tableData.length - 1];
 
     if (!lastRow || !isRowEmpty(lastRow)) {
+      // Don't create ghost row when table is completely empty to avoid glitch
+      if (tableData.length === 0) return;
+
       const newRow: TransactionRow = {
         id: crypto.randomUUID(),
         date: lastRow?.date || (new Date().toISOString().split("T")[0] as string),
@@ -126,10 +132,13 @@ export function SpreadsheetTable({
       const newData = [...tableData, newRow];
       setTableData(newData);
 
-      // Delaying onDataChange to prevent infinite loops if HomeClient overwrites
-      setTimeout(() => {
-        onDataChange?.(newData);
-      }, 0);
+      // Only report to parent when there's at least one real (non-ghost) row
+      const hasRealRow = newData.some(r => r.item || r.amount || r.categoryId);
+      if (hasRealRow) {
+        setTimeout(() => {
+          onDataChange?.(newData);
+        }, 0);
+      }
     }
   }, [tableData, viewMode, onDataChange]);
 
@@ -184,6 +193,14 @@ export function SpreadsheetTable({
     onSortingChange: setSorting,
     enableSortingRemoval: true,
     state: { rowSelection, sorting },
+  });
+
+  // Virtualizer for row-level virtualization
+  const virtualizer = useVirtualizer({
+    count: table.getRowModel().rows.length,
+    getScrollElement: () => scrollContainerRef.current?.querySelector(".table-scroll-container") ?? null,
+    estimateSize: () => 40, // estimated row height in px
+    overscan: 10, // render extra rows above/below viewport for smooth scrolling
   });
 
   const {
@@ -1036,7 +1053,7 @@ export function SpreadsheetTable({
       </div>
       <div className="flex-1 min-h-0 relative" ref={scrollContainerRef}>
         <Table
-          className="border-collapse"
+          className="border-collapse table-fixed"
           containerClassName="absolute inset-0 overflow-auto pb-32 table-scroll-container"
           overlay={loading && (
             <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-background/90">
@@ -1045,6 +1062,11 @@ export function SpreadsheetTable({
             </div>
           )}
         >
+          <colgroup>
+            {table.getAllColumns().map((col) => (
+              <col key={col.id} style={{ width: col.getSize() }} />
+            ))}
+          </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -1072,113 +1094,147 @@ export function SpreadsheetTable({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row, rowIndex) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="hover:bg-muted/30">
-                  {row.getVisibleCells().map((cell, colIndex) => {
-                    const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
-                    const isDropdown = isColumnDropdown(cell.column.id);
-                    const isSelectCol = cell.column.id === "select";
-                    const selected = !isSelectCol && isCellSelected(rowIndex, colIndex);
+              <>
+                {(() => {
+                  const items = virtualizer.getVirtualItems();
+                  const paddingTop = items.length > 0 ? items[0]!.start : 0;
+                  const paddingBottom = items.length > 0 ? virtualizer.getTotalSize() - items[items.length - 1]!.end : 0;
+                  return (
+                    <>
+                      {paddingTop > 0 && (
+                        <tr><td colSpan={columns.length} style={{ height: paddingTop, padding: 0, border: "none" }} /></tr>
+                      )}
+                      {items.map((virtualRow) => {
+                        const row = table.getRowModel().rows[virtualRow.index];
+                        if (!row) return null;
+                        const rowIndex = virtualRow.index;
+                        return (
+                          <TableRow
+                            key={row.id}
+                            data-index={virtualRow.index}
+                            data-state={row.getIsSelected() && "selected"}
+                            className="hover:bg-muted/30"
+                          >
+                      {row.getVisibleCells().map((cell, colIndex) => {
+                        const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
+                        const isDropdown = isColumnDropdown(cell.column.id);
+                        const isSelectCol = cell.column.id === "select";
+                        const selected = !isSelectCol && isCellSelected(rowIndex, colIndex);
 
-                    return (
-                      <TableCell
-                        key={cell.id}
-                        id={`cell-${tableId}-${rowIndex}-${colIndex}`}
-                        className={[
-                          "relative border-r border-border p-0 transition-colors",
-                          isEditing ? "ring-1 ring-primary ring-inset z-10" : "",
-                          selected && !isEditing ? "bg-blue-500/20 outline outline-1 outline-blue-400" : "",
-                          !selected && !isEditing ? "focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset" : "",
-                        ].join(" ")}
-                        tabIndex={isEditing && !isDropdown ? -1 : 0}
-                        data-row-index={rowIndex}
-                        data-col-index={colIndex}
-                        onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
-                        onMouseDown={(e) => handleCellMouseDown(e, rowIndex, colIndex, isSelectCol)}
-                        onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex, isSelectCol)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          const inSelectionRange =
-                            (selectionRange &&
-                              rowIndex >= selectionRange.minRow &&
-                              rowIndex <= selectionRange.maxRow &&
-                              colIndex >= selectionRange.minCol &&
-                              colIndex <= selectionRange.maxCol) ||
-                            multiSelections.some(
-                              (range) =>
-                                rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
-                            );
+                        return (
+                          <TableCell
+                            key={cell.id}
+                            id={`cell-${tableId}-${rowIndex}-${colIndex}`}
+                            className={[
+                              "relative border-r border-border p-0 transition-colors",
+                              isEditing ? "ring-1 ring-primary ring-inset z-10" : "",
+                              selected && !isEditing ? "bg-blue-500/20 outline outline-1 outline-blue-400" : "",
+                              !selected && !isEditing ? "focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset" : "",
+                            ].join(" ")}
+                            tabIndex={isEditing && !isDropdown ? -1 : 0}
+                            data-row-index={rowIndex}
+                            data-col-index={colIndex}
+                            onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                            onMouseDown={(e) => handleCellMouseDown(e, rowIndex, colIndex, isSelectCol)}
+                            onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex, isSelectCol)}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              const inSelectionRange =
+                                (selectionRange &&
+                                  rowIndex >= selectionRange.minRow &&
+                                  rowIndex <= selectionRange.maxRow &&
+                                  colIndex >= selectionRange.minCol &&
+                                  colIndex <= selectionRange.maxCol) ||
+                                multiSelections.some(
+                                  (range) =>
+                                    rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
+                                );
 
-                          if (!inSelectionRange) {
-                            setMultiSelections([]);
-                            setSelectionAnchor({ rowIndex, colIndex });
-                            setSelectionFocus({ rowIndex, colIndex });
-                            focusCell(rowIndex, colIndex);
-                          }
+                              if (!inSelectionRange) {
+                                setMultiSelections([]);
+                                setSelectionAnchor({ rowIndex, colIndex });
+                                setSelectionFocus({ rowIndex, colIndex });
+                                focusCell(rowIndex, colIndex);
+                              }
 
-                          setContextMenu({ x: e.clientX, y: e.clientY, rowIndex, colIndex });
-                        }}
-                        onFocus={() => {
-                          if (!isDragging.current && !editingCell && !isKeyboardNavigating.current) {
-                            const inSelectionRange =
-                              (selectionRange &&
-                                rowIndex >= selectionRange.minRow &&
-                                rowIndex <= selectionRange.maxRow &&
-                                colIndex >= selectionRange.minCol &&
-                                colIndex <= selectionRange.maxCol) ||
-                              multiSelections.some(
-                                (range) =>
-                                  rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
-                              );
+                              setContextMenu({ x: e.clientX, y: e.clientY, rowIndex, colIndex });
+                            }}
+                            onFocus={() => {
+                              if (!isDragging.current && !editingCell && !isKeyboardNavigating.current) {
+                                const inSelectionRange =
+                                  (selectionRange &&
+                                    rowIndex >= selectionRange.minRow &&
+                                    rowIndex <= selectionRange.maxRow &&
+                                    colIndex >= selectionRange.minCol &&
+                                    colIndex <= selectionRange.maxCol) ||
+                                  multiSelections.some(
+                                    (range) =>
+                                      rowIndex >= range.minRow && rowIndex <= range.maxRow && colIndex >= range.minCol && colIndex <= range.maxCol
+                                  );
 
-                            if (!inSelectionRange) {
-                              setMultiSelections([]);
-                              setSelectionAnchor({ rowIndex, colIndex });
-                              setSelectionFocus({ rowIndex, colIndex });
-                            }
-                          }
-                        }}
-                      >
-                        {isEditing && (isDropdown || cell.column.id === "date") ? (
-                          renderCellEditor(cell.column.id, rowIndex, colIndex)
-                        ) : (
-                          <>
-                            <div
-                              className={isSelectCol ? "absolute inset-0 flex items-center justify-center" : `min-h-[40px] whitespace-pre-wrap px-2 py-2 cursor-default select-none ${isEditing ? "opacity-0" : ""}`}
-                              onDoubleClick={() => {
-                                if (!isSelectCol) startEditing(rowIndex, colIndex);
-                              }}
-                              onPointerDown={isSelectCol ? (e) => {
-                                checkboxShiftRef.current = e.shiftKey;
-                              } : undefined}
-                            >
-                              {isSelectCol ? (
-                                <Checkbox
-                                  checked={row.getIsSelected()}
-                                  onCheckedChange={(value) => handleCheckboxClick(rowIndex, !!value)}
-                                  aria-label="Select row"
-                                />
-                              ) : (
-                                flexRender(cell.column.columnDef.cell, cell.getContext())
-                              )}
-                            </div>
-                            {isEditing && (
-                              <FloatingEditor
-                                initialValue={editValue}
-                                targetCellId={`cell-${tableId}-${rowIndex}-${colIndex}`}
-                                onSave={(val) => saveEdit(rowIndex, colIndex, val)}
-                                onCancel={() => cancelEdit(rowIndex, colIndex)}
-                                onNextRow={(val) => saveAndMoveDown(rowIndex, colIndex, val)}
-                                onNextCol={(val) => saveAndMoveRight(rowIndex, colIndex, val)}
-                              />
+                                if (!inSelectionRange) {
+                                  setMultiSelections([]);
+                                  setSelectionAnchor({ rowIndex, colIndex });
+                                  setSelectionFocus({ rowIndex, colIndex });
+                                }
+                              }
+                            }}
+                          >
+                            {isEditing && (isDropdown || cell.column.id === "date") ? (
+                              renderCellEditor(cell.column.id, rowIndex, colIndex)
+                            ) : (
+                              <>
+                                <div
+                                  className={isSelectCol ? "absolute inset-0 flex items-center justify-center" : `min-h-[40px] whitespace-pre-wrap px-2 py-2 cursor-default select-none ${isEditing ? "opacity-0" : ""}`}
+                                  onDoubleClick={() => {
+                                    if (!isSelectCol) startEditing(rowIndex, colIndex);
+                                  }}
+                                  onPointerDown={isSelectCol ? (e) => {
+                                    checkboxShiftRef.current = e.shiftKey;
+                                  } : undefined}
+                                >
+                                  {isSelectCol ? (
+                                    <div className="group/row-select flex h-full w-full items-center justify-center relative">
+                                      <span className={`text-[11px] text-muted-foreground tabular-nums transition-opacity ${row.getIsSelected() ? "opacity-0" : "group-hover/row-select:opacity-0"}`}>
+                                        {rowIndex + 1}
+                                      </span>
+                                      <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${row.getIsSelected() ? "opacity-100" : "opacity-0 group-hover/row-select:opacity-100"}`}>
+                                        <Checkbox
+                                          checked={row.getIsSelected()}
+                                          onCheckedChange={(value) => handleCheckboxClick(rowIndex, !!value)}
+                                          aria-label="Select row"
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    flexRender(cell.column.columnDef.cell, cell.getContext())
+                                  )}
+                                </div>
+                                {isEditing && (
+                                  <FloatingEditor
+                                    initialValue={editValue}
+                                    targetCellId={`cell-${tableId}-${rowIndex}-${colIndex}`}
+                                    onSave={(val) => saveEdit(rowIndex, colIndex, val)}
+                                    onCancel={() => cancelEdit(rowIndex, colIndex)}
+                                    onNextRow={(val) => saveAndMoveDown(rowIndex, colIndex, val)}
+                                    onNextCol={(val) => saveAndMoveRight(rowIndex, colIndex, val)}
+                                  />
+                                )}
+                              </>
                             )}
-                          </>
-                        )}
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  );
+                })}
+                      {paddingBottom > 0 && (
+                        <tr><td colSpan={columns.length} style={{ height: paddingBottom, padding: 0, border: "none" }} /></tr>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
@@ -1192,10 +1248,7 @@ export function SpreadsheetTable({
 
       {/* Floating Status Bar (like Google Sheets) */}
       {selectionStats && (
-        <div className="absolute bottom-6 right-6 bg-primary text-primary-foreground text-sm px-4 py-2 rounded-full shadow-lg font-medium flex gap-3 items-center z-50 animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
-          <span>Sum: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(selectionStats.sum)}</span>
-          <span className="text-primary-foreground/70 text-xs">({selectionStats.count} cells)</span>
-        </div>
+        <SelectionStatusBar stats={selectionStats} mode={statMode} onModeChange={setStatMode} />
       )}
       <SpreadsheetContextMenu
         contextMenu={contextMenu}

@@ -45,3 +45,6 @@ next-env.d.ts
 .data/
 
 .letta
+.factory
+qa-results
+reference

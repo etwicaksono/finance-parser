@@ -28,6 +28,9 @@ export function getColumns({
   return [
     {
       id: "select",
+      size: 40,
+      minSize: 40,
+      maxSize: 40,
       header: ({ table }) => (
         <div className="flex w-full items-center justify-center">
           <Checkbox
@@ -51,6 +54,8 @@ export function getColumns({
     },
     {
       accessorKey: "date",
+      size: 120,
+      minSize: 100,
       header: ({ column }) => {
         const isSorted = column.getIsSorted();
         return (
@@ -91,6 +96,8 @@ export function getColumns({
     },
     {
       accessorKey: "accountId",
+      size: 150,
+      minSize: 100,
       header: "Account",
       cell: (info) => {
         const val = info.getValue() as string;
@@ -99,6 +106,8 @@ export function getColumns({
     },
     {
       accessorKey: "categoryId",
+      size: 150,
+      minSize: 100,
       header: "Category",
       cell: (info) => {
         const val = info.getValue() as string;
@@ -107,6 +116,8 @@ export function getColumns({
     },
     {
       accessorKey: "amount",
+      size: 110,
+      minSize: 80,
       header: "Amount",
       cell: (info) => {
         const val = info.getValue() as number | null;
@@ -171,11 +182,16 @@ export function getColumns({
     },
     {
       accessorKey: "notes",
+      size: 200,
+      minSize: 100,
       header: "Notes",
       cell: (info) => info.getValue() || "",
     },
     {
       id: "actions",
+      size: 80,
+      minSize: 80,
+      maxSize: 80,
       header: "",
       cell: ({ row }) => (
         <div className="flex h-full w-full items-center justify-center gap-2 px-2">

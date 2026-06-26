@@ -47,6 +47,9 @@ export function useSpreadsheetSelection(tableData: TransactionRow[], columns: Co
     
     let sum = 0;
     let count = 0;
+    let numericCount = 0;
+    let min = Infinity;
+    let max = -Infinity;
     const processed = new Set<string>();
     
     const ranges = [...multiSelections];
@@ -59,21 +62,36 @@ export function useSpreadsheetSelection(tableData: TransactionRow[], columns: Co
            if (processed.has(keyStr)) continue;
            processed.add(keyStr);
 
+           count++;
+           const row = tableData[r];
+           if (!row) continue;
+
            const colDef = columns[c];
            const key = colDef && "accessorKey" in colDef ? (colDef as { accessorKey: string }).accessorKey : null;
-           if (key === "amount") {
-              const val = tableData[r]?.amount;
-              if (typeof val === 'number') {
-                sum += val;
-                count++;
-              }
+           if (!key) continue;
+
+           const rawVal = (row as unknown as Record<string, unknown>)[key];
+           if (typeof rawVal === "number") {
+             sum += rawVal;
+             numericCount++;
+             if (rawVal < min) min = rawVal;
+             if (rawVal > max) max = rawVal;
+           } else if (typeof rawVal === "string") {
+             const parsed = parseFloat(rawVal.replace(/\./g, "").replace(",", "."));
+             if (!isNaN(parsed)) {
+               sum += parsed;
+               numericCount++;
+               if (parsed < min) min = parsed;
+               if (parsed > max) max = parsed;
+             }
            }
         }
       }
     }
     
     if (count <= 1) return null;
-    return { sum, count };
+    const avg = numericCount > 0 ? sum / numericCount : 0;
+    return { sum, count, numericCount, avg, min: min === Infinity ? 0 : min, max: max === -Infinity ? 0 : max };
   }, [selectionRange, multiSelections, tableData, columns]);
 
   const isAnySingleCellSelected = multiSelections.length === 0 && selectionAnchor &&

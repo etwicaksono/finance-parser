@@ -77,6 +77,25 @@ export function HomeClient({
   const [receiptFilter, setReceiptFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>(() => ["unmapped", ...initialCategories.map(c => c.id)]);
 
+  // Refs to hold latest filter values so callbacks can be stable (useCallback with [])
+  const sourceFilterRef = React.useRef(sourceFilter);
+  const receiptFilterRef = React.useRef(receiptFilter);
+  const categoryFilterRef = React.useRef(categoryFilter);
+  const viewModeRef = React.useRef(viewMode);
+  const categoryFilterSetRef = React.useRef<Set<string>>(new Set(categoryFilter));
+
+  React.useEffect(() => { sourceFilterRef.current = sourceFilter; }, [sourceFilter]);
+  React.useEffect(() => { receiptFilterRef.current = receiptFilter; }, [receiptFilter]);
+  React.useEffect(() => { categoryFilterRef.current = categoryFilter; categoryFilterSetRef.current = new Set(categoryFilter); }, [categoryFilter]);
+  React.useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+
+  // Refs for state values used inside stable useCallback (handleDataChange)
+  const rawTransactionsRef = React.useRef(rawTransactions);
+  const groupAmountOverridesRef = React.useRef(groupAmountOverrides);
+  const computeGroupedTransactionsRef = React.useRef<((raw: TransactionRow[], overrides: Record<string, number>) => TransactionRow[]) | null>(null);
+  React.useEffect(() => { rawTransactionsRef.current = rawTransactions; }, [rawTransactions]);
+  React.useEffect(() => { groupAmountOverridesRef.current = groupAmountOverrides; }, [groupAmountOverrides]);
+
   React.useEffect(() => {
     setIsLoadingSession(true);
     import("@/actions/sessions").then(async ({ getSessions, getSessionById }) => {
@@ -112,13 +131,13 @@ export function HomeClient({
     });
   }, []);
 
-  const handleNewSession = async () => {
+  const handleNewSession = React.useCallback(async () => {
     setCurrentSessionId(null);
     setRawTransactions([]);
     setSessionImages([]);
     setSessionMetadata({});
     setGroupAmountOverrides({});
-  };
+  }, []);
 
   React.useEffect(() => {
     // Don't auto-create or auto-save while a session is being loaded from DB
@@ -178,7 +197,7 @@ export function HomeClient({
       import("@/actions/sessions").then(({ updateSession }) => {
         updateSession(currentSessionId, { data: rawTransactions, images: sessionImages, metadata: sessionMetadata as Record<string, unknown> }).catch(console.error);
       });
-    }, 1000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [rawTransactions, sessionImages, sessionMetadata, currentSessionId, isLoadingSession]);
 
@@ -354,6 +373,7 @@ export function HomeClient({
       return row as TransactionRow;
     });
   }, [initialCategories]);
+  React.useEffect(() => { computeGroupedTransactionsRef.current = computeGroupedTransactions; }, [computeGroupedTransactions]);
 
   const uniqueReceipts = React.useMemo(() => {
     const set = new Set<string>();
@@ -363,15 +383,10 @@ export function HomeClient({
 
   const availableCategoryIds = React.useMemo(() => {
     const ids = new Set<string>();
-    let baseData = rawTransactions;
-    if (sourceFilter !== "all") {
-      baseData = baseData.filter(r => r.source === sourceFilter);
-    }
-    if (receiptFilter !== "all") {
-      baseData = baseData.filter(r => r.receiptName === receiptFilter);
-    }
-    for (const row of baseData) {
-      ids.add(row.categoryId ?? "unmapped");
+    for (const r of rawTransactions) {
+      if (sourceFilter !== "all" && r.source !== sourceFilter) continue;
+      if (receiptFilter !== "all" && r.receiptName !== receiptFilter) continue;
+      ids.add(r.categoryId ?? "unmapped");
     }
     return ids;
   }, [rawTransactions, sourceFilter, receiptFilter]);
@@ -381,15 +396,14 @@ export function HomeClient({
   }, [initialCategories, availableCategoryIds]);
 
   const displayTransactions = React.useMemo(() => {
-    let result = rawTransactions;
-    if (sourceFilter !== "all") {
-      result = result.filter(r => r.source === sourceFilter);
-    }
-    if (receiptFilter !== "all") {
-      result = result.filter(r => r.receiptName === receiptFilter);
-    }
-    result = result.filter(r => categoryFilter.includes(r.categoryId ?? "unmapped"));
-    
+    // Single-pass filter — avoids creating intermediate arrays for 2000+ rows
+    const result = rawTransactions.filter(r => {
+      if (sourceFilter !== "all" && r.source !== sourceFilter) return false;
+      if (receiptFilter !== "all" && r.receiptName !== receiptFilter) return false;
+      if (!categoryFilter.includes(r.categoryId ?? "unmapped")) return false;
+      return true;
+    });
+
     if (viewMode === "raw") return result;
     return computeGroupedTransactions(result, groupAmountOverrides);
   }, [rawTransactions, viewMode, groupAmountOverrides, computeGroupedTransactions, sourceFilter, receiptFilter, categoryFilter]);
@@ -492,20 +506,22 @@ export function HomeClient({
     }
   };
 
-  const handleDataChange = (newData: TransactionRow[]) => {
-    if (viewMode === "raw") {
+  const handleDataChange = React.useCallback((newData: TransactionRow[]) => {
+    const vm = viewModeRef.current;
+    const sf = sourceFilterRef.current;
+    const rf = receiptFilterRef.current;
+    const cfSet = categoryFilterSetRef.current;
+
+    if (vm === "raw") {
       setRawTransactions(prev => {
-        // Find what was currently displayed before this change
-        let currentVisible = prev;
-        if (sourceFilter !== "all") {
-          currentVisible = currentVisible.filter(r => r.source === sourceFilter);
+        // Single-pass: build currentVisibleIds and check filters in one loop
+        const currentVisibleIds = new Set<string>();
+        for (const r of prev) {
+          if (sf !== "all" && r.source !== sf) continue;
+          if (rf !== "all" && r.receiptName !== rf) continue;
+          if (!cfSet.has(r.categoryId ?? "unmapped")) continue;
+          currentVisibleIds.add(r.id);
         }
-        if (receiptFilter !== "all") {
-          currentVisible = currentVisible.filter(r => r.receiptName === receiptFilter);
-        }
-        currentVisible = currentVisible.filter(r => categoryFilter.includes(r.categoryId ?? "unmapped"));
-        
-        const currentVisibleIds = new Set(currentVisible.map(r => r.id));
         const newIds = new Set(newData.map(r => r.id));
         
         // Find deleted rows
@@ -516,22 +532,32 @@ export function HomeClient({
         
         const newDataMap = new Map(newData.map(r => [r.id, r]));
         
-        // 1. Remove deleted rows
+        // 1. Remove deleted rows, 2. Update existing rows — single pass
         let updatedRaw = prev.filter(r => !deletedIds.has(r.id));
-        
-        // 2. Update existing rows
         updatedRaw = updatedRaw.map(r => newDataMap.has(r.id) ? newDataMap.get(r.id)! : r);
         
-        // 3. Append newly inserted rows
+        // 3. Append newly inserted rows (only those matching current filters)
         const existingIds = new Set(updatedRaw.map(r => r.id));
-        const newItems = newData.filter(r => !existingIds.has(r.id));
-        
-        return [...updatedRaw, ...newItems];
+        const visibleNewItems: TransactionRow[] = [];
+        for (const r of newData) {
+          if (existingIds.has(r.id)) continue;
+          if (sf !== "all" && r.source !== sf) continue;
+          if (rf !== "all" && r.receiptName !== rf) continue;
+          if (!cfSet.has(r.categoryId ?? "unmapped")) continue;
+          visibleNewItems.push(r);
+        }
+
+        // Return prev unchanged if nothing actually changed
+        if (visibleNewItems.length === 0 && deletedIds.size === 0 && newDataMap.size === 0) {
+          return prev;
+        }
+
+        return [...updatedRaw, ...visibleNewItems];
       });
     } else {
-      const currentDisplay = computeGroupedTransactions(rawTransactions, groupAmountOverrides);
-      let updatedRaw = [...rawTransactions];
-      let updatedOverrides = { ...groupAmountOverrides };
+      const currentDisplay = computeGroupedTransactionsRef.current!(rawTransactionsRef.current, groupAmountOverridesRef.current);
+      let updatedRaw = [...rawTransactionsRef.current];
+      let updatedOverrides = { ...groupAmountOverridesRef.current };
 
       // Detect deleted grouped rows and remove their underlying raw transactions
       const currentIds = new Set(currentDisplay.map(r => r.id));
@@ -584,9 +610,9 @@ export function HomeClient({
       setGroupAmountOverrides(updatedOverrides);
       setRawTransactions(updatedRaw);
     }
-  };
+  }, []);
 
-  const handleParse = async (text: string) => {
+  const handleParse = async (text: string, batchName: string) => {
     try {
       const result = parseChat(text);
       const rawRows: TransactionRow[] = result.transactions.map(t => ({
@@ -599,6 +625,7 @@ export function HomeClient({
         accountId: null,
         notes: t.sender ? `Sender: ${t.sender}` : "",
         source: "chat",
+        receiptName: batchName,
       }));
       await processRawRows(rawRows);
     } catch (error: unknown) {
@@ -610,7 +637,7 @@ export function HomeClient({
     }
   };
 
-  const handleCategoryChange = (rowId: string, itemString: string, newCategoryId: string) => {
+  const handleCategoryChange = React.useCallback((rowId: string, itemString: string, newCategoryId: string) => {
     const rawItems = itemString.split("\n").map(s => cleanKeyword(s, cleaningRules)).filter(Boolean);
 
     for (const rawItem of rawItems) {
@@ -625,9 +652,9 @@ export function HomeClient({
         }
       }
     }
-  };
+  }, [localMappings]);
 
-  const handleCopyRows = async (copiedRows: TransactionRow[]) => {
+  const handleCopyRows = React.useCallback(async (copiedRows: TransactionRow[]) => {
     // Extract keyword & category pairs to bump their usage score
     const mappingsToBump = copiedRows
       .filter((r) => r.item && r.categoryId)
@@ -636,7 +663,7 @@ export function HomeClient({
     if (mappingsToBump.length > 0) {
       batchAddMappings(mappingsToBump).catch(console.error);
     }
-  };
+  }, []);
 
   const handleScan = async (images: { id: string; name: string; base64: string; mimeType: string }[], translateNames: boolean) => {
     setProcessingText("Scanning receipt via AI...");
@@ -702,7 +729,7 @@ export function HomeClient({
                 <TabsList className="w-fit self-start">
                   <TabsTrigger value="chat">WhatsApp Chat</TabsTrigger>
                   <TabsTrigger value="scan">Scan Nota</TabsTrigger>
-                  <TabsTrigger value="manual">Manual AI</TabsTrigger>
+                  <TabsTrigger value="manual">JSON Input</TabsTrigger>
                 </TabsList>
                 <WorkspaceSettingsDropdown />
               </div>
@@ -722,8 +749,11 @@ export function HomeClient({
               <WhatsAppInput 
                 value={sessionMetadata.whatsappText || ""}
                 onChange={(whatsappText) => setSessionMetadata(prev => ({ ...prev, whatsappText }))}
-                onParse={handleParse} 
+                onParse={handleParse}
+                onRemoveBatch={(batchName) => setRawTransactions(prev => prev.filter(r => r.receiptName !== batchName))}
                 onClearOutput={() => setRawTransactions(prev => prev.filter(r => r.source !== "chat"))}
+                parseBatches={sessionMetadata.chatParseBatches || []}
+                onParseBatchesChange={(chatParseBatches) => setSessionMetadata(prev => ({ ...prev, chatParseBatches }))}
               />
             </TabsContent>
             <TabsContent value="scan" className="flex-1 min-h-0 m-0" keepMounted={true}>
@@ -774,7 +804,7 @@ export function HomeClient({
                   <option value="all" className="bg-background">Semua Sumber</option>
                   <option value="chat" className="bg-background">WhatsApp Chat</option>
                   <option value="scan" className="bg-background">Scan Nota</option>
-                  <option value="manual" className="bg-background">Manual AI</option>
+                  <option value="manual" className="bg-background">JSON Input</option>
                   <option value="manual-input" className="bg-background">Manual Input</option>
                 </select>
 
@@ -784,7 +814,7 @@ export function HomeClient({
                     value={receiptFilter}
                     onChange={(e) => setReceiptFilter(e.target.value)}
                   >
-                    <option value="all" className="bg-background">Semua Nota</option>
+                    <option value="all" className="bg-background">{activeTab === "chat" ? "Semua Parsing" : "Semua Nota"}</option>
                     {uniqueReceipts.map(nota => (
                       <option key={nota} value={nota} className="bg-background">{nota}</option>
                     ))}
@@ -802,14 +832,14 @@ export function HomeClient({
               <div className="shrink-0">
                 <SessionSwitcher
                   currentSessionId={currentSessionId}
-                  onSessionChange={(id, data, images, metadata) => {
-                    justLoadedRef.current = true;
-                    setCurrentSessionId(id);
-                    setRawTransactions(data);
-                    setSessionImages(images || []);
-                    setSessionMetadata(metadata || {});
-                    setGroupAmountOverrides({});
-                  }}
+                                onSessionChange={React.useCallback((id, data, images, metadata) => {
+                justLoadedRef.current = true;
+                setCurrentSessionId(id);
+                setRawTransactions(data);
+                setSessionImages(images || []);
+                setSessionMetadata(metadata || {});
+                setGroupAmountOverrides({});
+              }, [])}
                   onNewSession={handleNewSession}
                   onLoadingChange={setIsLoadingSession}
                   rawTransactions={rawTransactions}
@@ -824,11 +854,11 @@ export function HomeClient({
               contraKeywords={initialContraKeywords}
               keywordMappings={localMappings}
               onDataChange={handleDataChange}
-              onEditGroupedItems={(row) => setEditingGroupRow(row)}
+                            onEditGroupedItems={React.useCallback((row) => setEditingGroupRow(row), [])}
               onCategoryChange={handleCategoryChange}
               onCopyRows={handleCopyRows}
               onAutoMapRows={handleAutoMapRows}
-              onResolveDuplicate={(rowIndex, action) => {
+                            onResolveDuplicate={React.useCallback((rowIndex: number, action: "keep" | "remove") => {
                 setRawTransactions(prev => {
                   const next = [...prev];
                   if (action === "keep") {
@@ -838,7 +868,7 @@ export function HomeClient({
                   }
                   return next;
                 });
-              }}
+              }, [])}
               emptyMessage={
                 activeTab === "chat" ? "Tidak ada data. Paste riwayat WhatsApp Chat di samping untuk memulai." :
                 activeTab === "scan" ? "Tidak ada data. Scan/unggah foto nota belanja Anda di panel kiri." :

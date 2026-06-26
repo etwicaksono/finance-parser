@@ -48,10 +48,19 @@ export interface TransactionRow {
   receiptName?: string;
 }
 
+export interface ChatParseBatch {
+  id: string;
+  name: string;
+  textPreview: string;
+  lineCount: number;
+  isParsed: boolean;
+}
+
 export interface SessionMetadata {
   whatsappText?: string;
   manualText?: string;
   translateNames?: boolean;
+  chatParseBatches?: ChatParseBatch[];
 }
 
 export interface ParserResult {
