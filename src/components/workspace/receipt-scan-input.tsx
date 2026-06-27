@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Loader2, ScanText, X, ImagePlus, Play, ZoomIn, ZoomOut, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Swal from "sweetalert2";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SessionImage } from "@/types";
@@ -25,6 +26,7 @@ interface ReceiptScanInputProps {
   onImagesChange?: (images: SessionImage[]) => void;
   onClearInput?: () => void;
   onClearOutput?: () => void;
+  onRemoveByReceiptName?: (receiptName: string) => void;
 }
 
 export function ReceiptScanInput({ 
@@ -34,7 +36,8 @@ export function ReceiptScanInput({
   sessionImages, 
   onImagesChange, 
   onClearInput,
-  onClearOutput
+  onClearOutput,
+  onRemoveByReceiptName
 }: ReceiptScanInputProps) {
   const [files, setFiles] = useState<PreviewFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -136,7 +139,28 @@ export function ReceiptScanInput({
 
 
 
-  const removeFile = (id: string) => {
+  const removeFile = async (id: string) => {
+    const file = files.find(f => f.id === id);
+    if (!file) return;
+
+    if (file.isParsed) {
+      const result = await Swal.fire({
+        title: "Hapus Nota?",
+        text: `"${file.name}" sudah diparsing. Menghapus nota ini juga akan menghapus hasil parsingnya dari tabel.`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "var(--destructive)",
+        cancelButtonColor: "var(--muted-foreground)",
+        confirmButtonText: "Ya, Hapus!",
+        cancelButtonText: "Batal",
+        background: "var(--background)",
+        color: "var(--foreground)",
+        customClass: { popup: "border border-border rounded-lg" },
+      });
+      if (!result.isConfirmed) return;
+      if (onRemoveByReceiptName) onRemoveByReceiptName(file.name);
+    }
+
     setFiles((prev) => {
       const removed = prev.find((f) => f.id === id);
       if (removed) {

@@ -196,6 +196,15 @@ const notesHandler: ColumnHandler = {
   getCellValue: (row) => row.notes || "",
 };
 
+const receiptNameHandler: ColumnHandler = {
+  isEditable: false,
+  isDropdown: false,
+  applyUpdate: (row, value) => {
+    row.receiptName = value;
+  },
+  getCellValue: (row) => row.receiptName || "",
+};
+
 // ---------------------------------------------------------------------------
 // Registry & Public API
 // ---------------------------------------------------------------------------
@@ -207,6 +216,7 @@ export const columnHandlers: Record<string, ColumnHandler> = {
   amount: amountHandler,
   item: itemHandler,
   notes: notesHandler,
+  receiptName: receiptNameHandler,
 };
 
 export function isColumnEditable(key: string): boolean {

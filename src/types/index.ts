@@ -52,6 +52,7 @@ export interface ChatParseBatch {
   id: string;
   name: string;
   textPreview: string;
+  fullText: string;
   lineCount: number;
   isParsed: boolean;
 }
@@ -61,6 +62,7 @@ export interface SessionMetadata {
   manualText?: string;
   translateNames?: boolean;
   chatParseBatches?: ChatParseBatch[];
+  jsonParseBatches?: ChatParseBatch[];
 }
 
 export interface ParserResult {

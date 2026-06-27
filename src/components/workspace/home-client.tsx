@@ -690,7 +690,7 @@ export function HomeClient({
     }
   };
 
-  const handleManualJson = async (rawInput: { date?: string | null; item?: string; amount?: number }[]) => {
+  const handleManualJson = async (rawInput: { date?: string | null; item?: string; amount?: number }[], batchName: string) => {
     try {
       const rawRows: TransactionRow[] = rawInput.map(r => ({
         id: crypto.randomUUID(),
@@ -701,6 +701,7 @@ export function HomeClient({
         accountId: null,
         notes: "",
         source: "manual",
+        receiptName: batchName,
       }));
       await processRawRows(rawRows);
     } catch (error: unknown) {
@@ -764,6 +765,7 @@ export function HomeClient({
                 onScan={handleScan} 
                 sessionImages={sessionImages}
                 onImagesChange={setSessionImages}
+                onRemoveByReceiptName={(receiptName) => setRawTransactions(prev => prev.filter(r => r.receiptName !== receiptName))}
                 onClearOutput={() => setRawTransactions(prev => prev.filter(r => r.source !== "scan"))}
               />
             </TabsContent>
@@ -771,8 +773,11 @@ export function HomeClient({
               <ManualJsonInput 
                 value={sessionMetadata.manualText || ""}
                 onChange={(manualText) => setSessionMetadata(prev => ({ ...prev, manualText }))}
-                onParse={handleManualJson} 
+                onParse={handleManualJson}
+                onRemoveBatch={(batchName) => setRawTransactions(prev => prev.filter(r => r.receiptName !== batchName))}
                 onClearOutput={() => setRawTransactions(prev => prev.filter(r => r.source !== "manual"))}
+                parseBatches={sessionMetadata.jsonParseBatches || []}
+                onParseBatchesChange={(jsonParseBatches) => setSessionMetadata(prev => ({ ...prev, jsonParseBatches }))}
               />
             </TabsContent>
           </Tabs>

@@ -181,10 +181,10 @@ export function getColumns({
       },
     },
     {
-      accessorKey: "notes",
-      size: 200,
-      minSize: 100,
-      header: "Notes",
+      accessorKey: "receiptName",
+      size: 120,
+      minSize: 80,
+      header: "Source",
       cell: (info) => info.getValue() || "",
     },
     {
