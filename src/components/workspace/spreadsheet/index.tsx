@@ -199,8 +199,9 @@ export function SpreadsheetTable({
   const virtualizer = useVirtualizer({
     count: table.getRowModel().rows.length,
     getScrollElement: () => scrollContainerRef.current?.querySelector(".table-scroll-container") ?? null,
-    estimateSize: () => 40, // estimated row height in px
-    overscan: 10, // render extra rows above/below viewport for smooth scrolling
+    estimateSize: () => 40,
+    overscan: 10,
+    measureElement: (el) => el?.getBoundingClientRect().height ?? 40,
   });
 
   const {
@@ -1052,15 +1053,15 @@ export function SpreadsheetTable({
         </div>
       </div>
       <div className="flex-1 min-h-0 relative" ref={scrollContainerRef}>
+        {loading && (
+          <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-background/90">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-sm font-medium">{loadingText}</p>
+          </div>
+        )}
         <Table
           className="border-collapse table-fixed"
-          containerClassName="absolute inset-0 overflow-auto pb-32 table-scroll-container"
-          overlay={loading && (
-            <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-background/90">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-              <p className="text-sm font-medium">{loadingText}</p>
-            </div>
-          )}
+          containerClassName="absolute inset-0 overflow-auto table-scroll-container"
         >
           <colgroup>
             {table.getAllColumns().map((col) => (
@@ -1111,6 +1112,7 @@ export function SpreadsheetTable({
                         return (
                           <TableRow
                             key={row.id}
+                            ref={virtualizer.measureElement}
                             data-index={virtualRow.index}
                             data-state={row.getIsSelected() && "selected"}
                             className="hover:bg-muted/30"

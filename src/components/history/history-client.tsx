@@ -517,6 +517,32 @@ export function HistoryClient() {
                   </div>
                 )}
 
+                {/* JSON parse batches */}
+                {detail.metadata.jsonParseBatches && detail.metadata.jsonParseBatches.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <FileText className="h-4 w-4 text-purple-600" />
+                      <span className="text-sm font-medium">JSON Input ({detail.metadata.jsonParseBatches.length})</span>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {detail.metadata.jsonParseBatches.map((batch) => (
+                        <div key={batch.id} className="flex items-start gap-3 rounded-md border bg-muted/30 p-3">
+                          <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium">{batch.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{batch.lineCount} items</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line font-mono">
+                              {batch.textPreview}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Receipt images */}
                 {detail.images.length > 0 && (
                   <div>

@@ -55,7 +55,16 @@ export function HomeClient({
   swiftrouterModels,
   initialSessionId = null,
 }: HomeClientProps) {
-  const [rawTransactions, setRawTransactions] = useState<TransactionRow[]>([]);
+  const [rawTransactions, setRawTransactions] = useState<TransactionRow[]>([{
+    id: crypto.randomUUID(),
+    date: new Date().toISOString().split("T")[0] as string,
+    item: "",
+    amount: null,
+    categoryId: null,
+    accountId: null,
+    notes: "",
+    source: "manual-input",
+  }]);
   const [sessionImages, setSessionImages] = useState<SessionImage[]>([]);
   const [viewMode, setViewMode] = useState<"raw" | "grouped">("raw");
   const [groupAmountOverrides, setGroupAmountOverrides] = useState<Record<string, number>>({});
@@ -133,7 +142,16 @@ export function HomeClient({
 
   const handleNewSession = React.useCallback(async () => {
     setCurrentSessionId(null);
-    setRawTransactions([]);
+    setRawTransactions([{
+      id: crypto.randomUUID(),
+      date: new Date().toISOString().split("T")[0] as string,
+      item: "",
+      amount: null,
+      categoryId: null,
+      accountId: null,
+      notes: "",
+      source: "manual-input",
+    }]);
     setSessionImages([]);
     setSessionMetadata({});
     setGroupAmountOverrides({});
