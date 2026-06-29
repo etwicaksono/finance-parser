@@ -28,6 +28,7 @@ interface CategoryDropdownProps {
   initialSearch?: string;
   onSelect: (value: string | null) => void;
   onClose: () => void;
+  onTab?: (value: string | null) => void;
 }
 
 export function CategoryDropdown({
@@ -36,9 +37,11 @@ export function CategoryDropdown({
   initialSearch = "",
   onSelect,
   onClose,
+  onTab,
 }: CategoryDropdownProps) {
   const [open, setOpen] = React.useState(true);
   const [search, setSearch] = React.useState(initialSearch);
+  const commandRef = React.useRef<HTMLDivElement>(null);
 
   // Focus the popover trigger on mount? No, shadcn popover auto-focuses the input inside.
 
@@ -55,8 +58,28 @@ export function CategoryDropdown({
       {/* We use an invisible trigger so it anchors perfectly to the parent table cell */}
       <PopoverTrigger className="h-full w-full bg-transparent absolute inset-0 z-0 opacity-0" />
       <PopoverContent className="w-[200px] p-0" align="start" sideOffset={0}>
-        <Command>
-          <CommandInput placeholder="Search..." autoFocus value={search} onValueChange={setSearch} />
+        <Command ref={commandRef}>
+          <CommandInput
+            placeholder="Search..."
+            autoFocus
+            value={search}
+            onValueChange={(val) => {
+              setSearch(val);
+              requestAnimationFrame(() => {
+                commandRef.current?.querySelector("[data-slot=command-list]")?.scrollTo(0, 0);
+              });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Tab" && onTab) {
+                e.preventDefault();
+                const highlighted = commandRef.current?.querySelector("[data-selected=true]");
+                const selectedValue = highlighted?.getAttribute("data-value");
+                const match = selectedValue ? options.find(o => o.name.toLowerCase() === selectedValue.toLowerCase()) : null;
+                onTab(match ? match.id : value);
+                setOpen(false);
+              }
+            }}
+          />
           <CommandList>
             <CommandEmpty>No option found.</CommandEmpty>
             <CommandGroup>

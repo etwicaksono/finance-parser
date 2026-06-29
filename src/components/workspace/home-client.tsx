@@ -82,6 +82,8 @@ export function HomeClient({
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   // Ref to skip the first debounce update after loading a session
   const justLoadedRef = React.useRef(false);
+  // Ref-based lock to prevent concurrent session creation
+  const isCreatingSessionRef = React.useRef(false);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [receiptFilter, setReceiptFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>(() => ["unmapped", ...initialCategories.map(c => c.id)]);
@@ -157,55 +159,53 @@ export function HomeClient({
     setGroupAmountOverrides({});
   }, []);
 
-  React.useEffect(() => {
-    // Don't auto-create or auto-save while a session is being loaded from DB
-    if (isLoadingSession) return;
+  const ensureSession = React.useCallback(async (): Promise<string | null> => {
+    if (currentSessionId) return currentSessionId;
+    if (isCreatingSessionRef.current) return null;
+    isCreatingSessionRef.current = true;
+    try {
+      const { createSession, getSessions, getSessionById, updateSession } = await import("@/actions/sessions");
+      const { format } = await import("date-fns");
+      const name = `Parsing - ${format(new Date(), "dd MMM yyyy HH:mm")}`;
 
-    if (!currentSessionId) {
-      if (rawTransactions.length > 0 || sessionImages.length > 0) {
-        // Auto-create session on first data
-        import("@/actions/sessions").then(async ({ createSession, getSessions, getSessionById, updateSession }) => {
-          const { format } = await import("date-fns");
-          const name = `Parsing - ${format(new Date(), "dd MMM yyyy HH:mm")}`;
-
-          // Check if the most recent session is empty and can be reused
-          const sessions = await getSessions();
-          if (sessions.length > 0 && sessions[0]?.id) {
-            const recent = await getSessionById(sessions[0].id);
-            if (recent) {
-              const recentData = (recent.data as TransactionRow[]) || [];
-              const recentImages = (recent.images as SessionImage[]) || [];
-              const isEmpty = (recentData.length === 0 && recentImages.length === 0) ||
-                (recentData.length === 1 && recentImages.length === 0 &&
-                  (!recentData[0]?.item || recentData[0].item.trim() === "") &&
-                  recentData[0]?.amount == null
-                );
-
-              if (isEmpty) {
-                // Reuse this session: rename and update with new data
-                await updateSession(recent.id, {
-                  name,
-                  data: rawTransactions,
-                  images: sessionImages,
-                  metadata: sessionMetadata as Record<string, unknown>,
-                });
-                setCurrentSessionId(recent.id);
-                return;
-              }
-            }
+      const allSessions = await getSessions();
+      if (allSessions.length > 0 && allSessions[0]?.id) {
+        const recent = await getSessionById(allSessions[0].id);
+        if (recent) {
+          const recentData = (recent.data as TransactionRow[]) || [];
+          const recentImages = (recent.images as SessionImage[]) || [];
+          const isEmpty = (recentData.length === 0 && recentImages.length === 0) ||
+            (recentData.length === 1 && recentImages.length === 0 &&
+              (!recentData[0]?.item || recentData[0].item.trim() === "") &&
+              recentData[0]?.amount == null
+            );
+          if (isEmpty) {
+            await updateSession(recent.id, { name });
+            setCurrentSessionId(recent.id);
+            return recent.id;
           }
-
-          // No empty session found, create a new one
-          const sess = await createSession(name, rawTransactions, sessionImages, sessionMetadata as Record<string, unknown>);
-          if (sess) {
-            setCurrentSessionId(sess.id);
-          }
-        }).catch(console.error);
+        }
       }
-      return;
+
+      const sess = await createSession(name);
+      if (sess) {
+        setCurrentSessionId(sess.id);
+        return sess.id;
+      }
+      return null;
+    } catch (err) {
+      console.error("Failed to ensure session:", err);
+      return null;
+    } finally {
+      isCreatingSessionRef.current = false;
     }
-    
-    // Skip debounce update right after loading a session (data came from DB, not user)
+  }, [currentSessionId]);
+
+  // Auto-save existing sessions (debounced)
+  React.useEffect(() => {
+    if (isLoadingSession) return;
+    if (!currentSessionId) return;
+
     if (justLoadedRef.current) {
       justLoadedRef.current = false;
       return;
@@ -222,6 +222,7 @@ export function HomeClient({
 
 
   const processRawRows = async (rawRows: TransactionRow[]) => {
+    await ensureSession();
     setProcessingText("Mapping local data...");
     await new Promise((resolve) => setTimeout(resolve, 50));
     try {
@@ -673,6 +674,7 @@ export function HomeClient({
   }, [localMappings]);
 
   const handleCopyRows = React.useCallback(async (copiedRows: TransactionRow[]) => {
+    await ensureSession();
     // Extract keyword & category pairs to bump their usage score
     const mappingsToBump = copiedRows
       .filter((r) => r.item && r.categoryId)
@@ -681,7 +683,7 @@ export function HomeClient({
     if (mappingsToBump.length > 0) {
       batchAddMappings(mappingsToBump).catch(console.error);
     }
-  }, []);
+  }, [ensureSession]);
 
   const handleScan = async (images: { id: string; name: string; base64: string; mimeType: string }[], translateNames: boolean) => {
     setProcessingText("Scanning receipt via AI...");

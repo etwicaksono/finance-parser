@@ -611,6 +611,7 @@ export function SpreadsheetTable({
               value={accounts.some((a) => a.id === editValue) ? editValue : null}
               initialSearch={accounts.some((a) => a.id === editValue) ? "" : editValue}
               onSelect={(newVal) => saveAndMoveDown(rowIndex, colIndex, newVal || "")}
+              onTab={(newVal) => saveAndMoveRight(rowIndex, colIndex, newVal || "")}
               onClose={() => cancelEdit(rowIndex, colIndex)}
             />
           );
@@ -621,6 +622,7 @@ export function SpreadsheetTable({
               value={categories.some((c) => c.id === editValue) ? editValue : null}
               initialSearch={categories.some((c) => c.id === editValue) ? "" : editValue}
               onSelect={(newVal) => saveAndMoveDown(rowIndex, colIndex, newVal || "")}
+              onTab={(newVal) => saveAndMoveRight(rowIndex, colIndex, newVal || "")}
               onClose={() => cancelEdit(rowIndex, colIndex)}
             />
           );
@@ -658,7 +660,7 @@ export function SpreadsheetTable({
           return null; // text columns use FloatingEditor, handled in JSX
       }
     },
-    [accounts, categories, editValue, saveAndMoveDown, cancelEdit, saveEdit, tableData, focusCell]
+    [accounts, categories, editValue, saveAndMoveDown, saveAndMoveRight, cancelEdit, saveEdit, tableData, focusCell]
   );
 
   // Mouse handlers for drag-selection
