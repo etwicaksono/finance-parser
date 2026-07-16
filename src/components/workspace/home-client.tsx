@@ -533,45 +533,50 @@ export function HomeClient({
 
     if (vm === "raw") {
       setRawTransactions(prev => {
-        // Single-pass: build currentVisibleIds and check filters in one loop
-        const currentVisibleIds = new Set<string>();
+        const isVisible = (r: TransactionRow) => {
+          if (sf !== "all" && r.source !== sf) return false;
+          if (rf !== "all" && r.receiptName !== rf) return false;
+          if (!cfSet.has(r.categoryId ?? "unmapped")) return false;
+          return true;
+        };
+
+        // Partition prev into visible/hidden. Hidden rows are anchored to the
+        // visible row that immediately precedes them so their relative position
+        // is preserved during reconstruction.
+        const leadingHidden: TransactionRow[] = [];
+        const trailingHiddenByAnchor = new Map<string, TransactionRow[]>();
+        let lastVisibleId: string | null = null;
         for (const r of prev) {
-          if (sf !== "all" && r.source !== sf) continue;
-          if (rf !== "all" && r.receiptName !== rf) continue;
-          if (!cfSet.has(r.categoryId ?? "unmapped")) continue;
-          currentVisibleIds.add(r.id);
+          if (isVisible(r)) {
+            lastVisibleId = r.id;
+          } else if (lastVisibleId === null) {
+            leadingHidden.push(r);
+          } else {
+            const list = trailingHiddenByAnchor.get(lastVisibleId);
+            if (list) list.push(r);
+            else trailingHiddenByAnchor.set(lastVisibleId, [r]);
+          }
         }
+
         const newIds = new Set(newData.map(r => r.id));
-        
-        // Find deleted rows
-        const deletedIds = new Set<string>();
-        for (const id of currentVisibleIds) {
-          if (!newIds.has(id)) deletedIds.add(id);
-        }
-        
-        const newDataMap = new Map(newData.map(r => [r.id, r]));
-        
-        // 1. Remove deleted rows, 2. Update existing rows — single pass
-        let updatedRaw = prev.filter(r => !deletedIds.has(r.id));
-        updatedRaw = updatedRaw.map(r => newDataMap.has(r.id) ? newDataMap.get(r.id)! : r);
-        
-        // 3. Append newly inserted rows (only those matching current filters)
-        const existingIds = new Set(updatedRaw.map(r => r.id));
-        const visibleNewItems: TransactionRow[] = [];
+        const prevIds = new Set(prev.map(r => r.id));
+
+        // Rebuild following newData order, interleaving hidden rows at their
+        // original anchor positions so insertions keep their place.
+        const result: TransactionRow[] = [...leadingHidden];
         for (const r of newData) {
-          if (existingIds.has(r.id)) continue;
-          if (sf !== "all" && r.source !== sf) continue;
-          if (rf !== "all" && r.receiptName !== rf) continue;
-          if (!cfSet.has(r.categoryId ?? "unmapped")) continue;
-          visibleNewItems.push(r);
+          const existedBefore = prevIds.has(r.id);
+          if (!existedBefore && !isVisible(r)) continue; // new row outside current filters
+          result.push(r);
+          const trailing = trailingHiddenByAnchor.get(r.id);
+          if (trailing) result.push(...trailing);
+        }
+        // Preserve hidden rows whose anchor was deleted (or is absent from newData)
+        for (const [anchorId, hiddenRows] of trailingHiddenByAnchor) {
+          if (!newIds.has(anchorId)) result.push(...hiddenRows);
         }
 
-        // Return prev unchanged if nothing actually changed
-        if (visibleNewItems.length === 0 && deletedIds.size === 0 && newDataMap.size === 0) {
-          return prev;
-        }
-
-        return [...updatedRaw, ...visibleNewItems];
+        return result;
       });
     } else {
       const currentDisplay = computeGroupedTransactionsRef.current!(rawTransactionsRef.current, groupAmountOverridesRef.current);
