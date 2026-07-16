@@ -195,15 +195,17 @@ export function getColumns({
       header: "",
       cell: ({ row }) => (
         <div className="flex h-full w-full items-center justify-center gap-2 px-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 hover:bg-primary/20"
-            onClick={() => insertRowBelow(row.index)}
-            title="Add row below"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          {viewMode !== "grouped" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 hover:bg-primary/20"
+              onClick={() => insertRowBelow(row.index)}
+              title="Add row below"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
