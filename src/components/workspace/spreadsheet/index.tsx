@@ -92,12 +92,41 @@ export function SpreadsheetTable({
 
   // Ref to skip ghost row effect when data was just synced from props
   const skipGhostRowRef = React.useRef(false);
+  // Id of the trailing placeholder row owned by the table. It stays local until
+  // the user actually types into it, so it never leaks into the parent's state.
+  const ghostRowIdRef = React.useRef<string | null>(null);
 
   // Sync external data prop to internal state (must run before ghost row effect)
   React.useEffect(() => {
     skipGhostRowRef.current = true;
+    ghostRowIdRef.current = null;
     setTableData(data);
   }, [data]);
+
+  const isRowEmpty = React.useCallback((row: TransactionRow) => {
+    return !row.item && !row.amount && !row.categoryId;
+  }, []);
+
+  // Reports changes upward with the untouched ghost row stripped out. Once the
+  // user fills the ghost row it is no longer empty and is promoted to a real row.
+  const reportChange = React.useCallback(
+    (newData: TransactionRow[]) => {
+      if (!onDataChange) return;
+      const ghostId = ghostRowIdRef.current;
+      if (ghostId === null) {
+        onDataChange(newData);
+        return;
+      }
+      const ghost = newData.find((r) => r.id === ghostId);
+      if (ghost && isRowEmpty(ghost)) {
+        onDataChange(newData.filter((r) => r.id !== ghostId));
+      } else {
+        if (ghost) ghostRowIdRef.current = null;
+        onDataChange(newData);
+      }
+    },
+    [onDataChange, isRowEmpty]
+  );
 
   // Ghost Row logic
   React.useEffect(() => {
@@ -106,10 +135,6 @@ export function SpreadsheetTable({
       return;
     }
     if (viewMode === "grouped") return;
-
-    const isRowEmpty = (row: TransactionRow) => {
-      return !row.item && !row.amount && !row.categoryId;
-    };
 
     const lastRow = tableData[tableData.length - 1];
 
@@ -129,18 +154,11 @@ export function SpreadsheetTable({
         source: "manual-input",
       };
 
-      const newData = [...tableData, newRow];
-      setTableData(newData);
-
-      // Only report to parent when there's at least one real (non-ghost) row
-      const hasRealRow = newData.some(r => r.item || r.amount || r.categoryId);
-      if (hasRealRow) {
-        setTimeout(() => {
-          onDataChange?.(newData);
-        }, 0);
-      }
+      // Purely a UI affordance — the parent is not notified until it holds data.
+      ghostRowIdRef.current = newRow.id;
+      setTableData([...tableData, newRow]);
     }
-  }, [tableData, viewMode, onDataChange]);
+  }, [tableData, viewMode, isRowEmpty]);
 
   const insertRowBelow = React.useCallback((index: number) => {
     setTableData((prev) => {
@@ -156,19 +174,19 @@ export function SpreadsheetTable({
         notes: "",
       };
       newData.splice(index + 1, 0, newRow);
-      onDataChange?.(newData);
+      reportChange(newData);
       return newData;
     });
-  }, [onDataChange]);
+  }, [reportChange]);
 
   const deleteRow = React.useCallback((index: number) => {
     setTableData((prev) => {
       const newData = [...prev];
       newData.splice(index, 1);
-      onDataChange?.(newData);
+      reportChange(newData);
       return newData;
     });
-  }, [onDataChange]);
+  }, [reportChange]);
 
   const columns = React.useMemo(
     () =>
@@ -451,8 +469,8 @@ export function SpreadsheetTable({
 
     setTableData(newData);
     setRowSelection({});
-    onDataChange?.(newData);
-  }, [table, tableData, onDataChange]);
+    reportChange(newData);
+  }, [table, tableData, reportChange]);
 
   const focusCell = React.useCallback((row: number, col: number) => {
     isKeyboardNavigating.current = true;
@@ -520,11 +538,11 @@ export function SpreadsheetTable({
 
         newData[origIndex] = row as TransactionRow;
         setTableData(newData);
-        onDataChange?.(newData);
+        reportChange(newData);
         return null;
       });
     },
-    [columns, editValue, tableData, columnHandlerContext, onDataChange, table]
+    [columns, editValue, tableData, columnHandlerContext, reportChange, table]
   );
 
   // --- Navigation helpers (shared across all editor types) ---
@@ -791,11 +809,11 @@ export function SpreadsheetTable({
           }
         }
 
-        onDataChange?.(newData);
+        reportChange(newData);
         return newData;
       });
     },
-    [editingCell, selectionAnchor, selectionRange, multiSelections, columns, columnHandlerContext, onDataChange, table]
+    [editingCell, selectionAnchor, selectionRange, multiSelections, columns, columnHandlerContext, reportChange, table]
   );
 
   const handleCopyAction = React.useCallback(
@@ -933,7 +951,7 @@ export function SpreadsheetTable({
         }
 
         if (changed) {
-          onDataChange?.(newData);
+          reportChange(newData);
         }
         return newData;
       });
@@ -1263,7 +1281,7 @@ export function SpreadsheetTable({
         table={table}
         selectionRange={selectionRange}
         multiSelections={multiSelections}
-        onDataChange={onDataChange}
+        onDataChange={reportChange}
         handleCopyAction={handleCopyAction}
         handlePasteAction={handlePasteAction}
         onAutoMapRows={onAutoMapRows}
