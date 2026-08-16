@@ -34,6 +34,11 @@ describe("formatItemWithPrice", () => {
     expect(formatItemWithPrice("Boba", -25500)).toBe("Boba => 25.5k");
   });
 
+  it("keeps decimals that would otherwise be rounded away", () => {
+    expect(formatItemWithPrice("Indihome kemloko", -226440)).toBe("Indihome kemloko => 226.44k");
+    expect(formatItemWithPrice("Biaya Layanan", -1032)).toBe("Biaya Layanan => 1.032k");
+  });
+
   it("leaves the item untouched when there is no amount or it already has one", () => {
     expect(formatItemWithPrice("Boba", null)).toBe("Boba");
     expect(formatItemWithPrice("Boba", 0)).toBe("Boba");

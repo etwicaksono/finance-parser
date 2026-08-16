@@ -42,7 +42,9 @@ export function parseAmount(text: string, isIncome: boolean = false): number | n
   if (isNaN(numericValue)) return null;
 
   // 4. Calculate final amount and apply sign
-  let finalAmount = numericValue * multiplier;
+  // Rounding to cents removes binary float noise from the multiplier
+  // (e.g. 1.001 * 1000 === 1000.9999999999999).
+  let finalAmount = Math.round(numericValue * multiplier * 100) / 100;
   
   if (!isIncome) {
     finalAmount = -Math.abs(finalAmount); // Expense defaults to negative

@@ -15,6 +15,13 @@ describe("parseAmount", () => {
       expect(parseAmount("50K")).toBe(-50000);
     });
 
+    it("keeps multi-decimal k values exact (no float drift)", () => {
+      expect(parseAmount("226.44k")).toBe(-226440);
+      expect(parseAmount("1.032k")).toBe(-1032);
+      expect(parseAmount("8.29k")).toBe(-8290);
+      expect(parseAmount("1.005k")).toBe(-1005);
+    });
+
     it("parses amounts with RB (ribu) multiplier", () => {
       expect(parseAmount("2rb")).toBe(-2000);
       expect(parseAmount("2,5rb")).toBe(-2500);

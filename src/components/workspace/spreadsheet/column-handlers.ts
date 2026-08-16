@@ -1,6 +1,7 @@
 import { TransactionRow, CategoryOption, AccountOption } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { getCategorySign } from "@/features/validation/category-sign";
+import { extractAnnotatedAmount } from "@/features/parser/price-annotation";
 
 // ---------------------------------------------------------------------------
 // Context & Interfaces
@@ -143,11 +144,9 @@ const itemHandler: ColumnHandler = {
     let sum = 0;
     let hasPrice = false;
     value.split("\n").forEach((line: string) => {
-      const match = line.match(/=>\s*([\d.]+)k?/i);
-      if (match && match[1]) {
+      const rawPrice = extractAnnotatedAmount(line);
+      if (rawPrice !== null) {
         hasPrice = true;
-        const val = parseFloat(match[1]);
-        const rawPrice = line.toLowerCase().includes("k") ? val * 1000 : val;
         const isContraItem = ctx.contraKeywords.some((kw) =>
           line.toLowerCase().includes(kw.toLowerCase()),
         );

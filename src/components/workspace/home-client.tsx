@@ -16,6 +16,7 @@ import { batchClassifyTransactions } from "@/actions/classify";
 import { addMapping, batchAddMappings } from "@/actions/mappings";
 import { cleanKeyword, type KeywordCleaningRules } from "@/lib/keyword-utils";
 import { isIsoDateAmbiguous } from "@/features/parser/date-parser";
+import { formatPriceAnnotation } from "@/features/parser/price-annotation";
 import * as React from "react";
 import { ReceiptScanInput } from "@/components/workspace/receipt-scan-input";
 import { GroupedItemsModal } from "./grouped-items-modal";
@@ -308,9 +309,7 @@ export function HomeClient({
       const formatItemWithPrice = (item: string, amount: number | null | undefined) => {
         if (!amount) return item;
         if (item.includes("=>")) return item;
-        const kVal = Math.abs(amount) / 1000;
-        const kStr = Number.isInteger(kVal) ? `${kVal}k` : `${parseFloat(kVal.toFixed(1))}k`;
-        return `${item} => ${kStr}`;
+        return `${item} => ${formatPriceAnnotation(amount)}`;
       };
 
       enrichedRows.forEach(row => {

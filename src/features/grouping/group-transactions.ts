@@ -1,4 +1,5 @@
 import { TransactionRow, CategoryOption } from "@/types";
+import { formatPriceAnnotation } from "../parser/price-annotation";
 
 /**
  * Appends a shorthand price annotation to an item name (e.g. "Boba => 25k").
@@ -7,9 +8,7 @@ import { TransactionRow, CategoryOption } from "@/types";
 export function formatItemWithPrice(item: string, amount: number | null | undefined): string {
   if (!amount) return item;
   if (item.includes("=>")) return item;
-  const kVal = Math.abs(amount) / 1000;
-  const kStr = Number.isInteger(kVal) ? `${kVal}k` : `${parseFloat(kVal.toFixed(1))}k`;
-  return `${item} => ${kStr}`;
+  return `${item} => ${formatPriceAnnotation(amount)}`;
 }
 
 /**
