@@ -4,11 +4,13 @@ import { ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle, Check, Trash, Plus, Tra
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CategoryOption, AccountOption, TransactionRow } from "@/types";
+import { CategoryOption, AccountOption, LabelOption, TransactionRow } from "@/types";
+import { resolveLabelNames } from "@/features/labels/label-utils";
 
 export interface GetColumnsProps {
   categories: CategoryOption[];
   accounts: AccountOption[];
+  labels?: LabelOption[];
   viewMode?: "raw" | "grouped";
   insertRowBelow: (index: number) => void;
   deleteRow: (index: number) => void;
@@ -19,6 +21,7 @@ export interface GetColumnsProps {
 export function getColumns({
   categories,
   accounts,
+  labels = [],
   viewMode,
   insertRowBelow,
   deleteRow,
@@ -112,6 +115,22 @@ export function getColumns({
       cell: (info) => {
         const val = info.getValue() as string;
         return categories.find((c) => c.id === val)?.name || "-";
+      },
+    },
+    {
+      accessorKey: "labelIds",
+      size: 180,
+      minSize: 120,
+      header: "Labels",
+      enableSorting: false,
+      cell: (info) => {
+        const ids = (info.getValue() as string[]) ?? [];
+        const names = resolveLabelNames(ids, labels);
+        return (
+          <span className="truncate" title={names.join(", ")}>
+            {names.length > 0 ? names.join(", ") : "-"}
+          </span>
+        );
       },
     },
     {

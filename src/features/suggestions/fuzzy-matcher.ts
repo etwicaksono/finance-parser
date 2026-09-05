@@ -43,6 +43,7 @@ export function findFuzzyMatch(
 
   const result: SuggestionMatch = {
     categoryId: bestMatch.item.categoryId,
+    labelIds: bestMatch.item.labelIds ?? [],
     confidence,
     source: "fuzzy",
   };

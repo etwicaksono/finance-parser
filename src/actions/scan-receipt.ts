@@ -60,6 +60,7 @@ export async function scanReceiptImages(
         amount: item.amount,
         categoryId: null,
         accountId: null,
+        labelIds: [],
         notes: "",
         source: "scan",
       };

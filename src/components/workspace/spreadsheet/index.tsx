@@ -23,12 +23,17 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CategoryOption, AccountOption, TransactionRow } from "@/types";
+import { CategoryOption, AccountOption, LabelOption, TransactionRow } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
+import { serializeLabelIds } from "@/features/labels/label-utils";
+import { toast } from "sonner";
 
 import { CategoryDropdown } from "../category-dropdown";
 import { AccountDropdown } from "../account-dropdown";
 import { FloatingEditor } from "../floating-editor";
+import { LabelMultiSelectDropdown } from "./label-multi-select";
+import { formatRowsForSheets } from "./sheet-copy";
+import { rangeBetween, subtractRangeFromRanges, type CellRange } from "./selection-range";
 
 import { getColumns } from "./columns";
 import { SpreadsheetContextMenu } from "./context-menu";
@@ -47,11 +52,13 @@ interface SpreadsheetTableProps {
   data: TransactionRow[];
   categories: CategoryOption[];
   accounts: AccountOption[];
+  labels?: LabelOption[];
   contraKeywords?: string[];
   viewMode?: "raw" | "grouped";
   onDataChange?: (data: TransactionRow[]) => void;
   onEditGroupedItems?: (row: TransactionRow) => void;
   onCategoryChange?: (rowId: string, itemString: string, newCategoryId: string) => void;
+  onLabelsChange?: (rowId: string, itemString: string, labelIds: string[]) => void;
   onCopyRows?: (rows: TransactionRow[]) => void;
   onResolveDuplicate?: (rowIndex: number, action: "keep" | "remove") => void;
   onAutoMapRows?: (rowIndices: number[], useAI: boolean) => void;
@@ -67,11 +74,13 @@ export function SpreadsheetTable({
   data,
   categories,
   accounts,
+  labels = [],
   contraKeywords = [],
   viewMode = "raw",
   onDataChange,
   onEditGroupedItems,
   onCategoryChange,
+  onLabelsChange,
   onCopyRows,
   onResolveDuplicate,
   onAutoMapRows,
@@ -149,6 +158,7 @@ export function SpreadsheetTable({
         amount: null,
         categoryId: null,
         accountId: lastRow ? lastRow.accountId : null,
+        labelIds: [],
         notes: "",
         isDuplicate: false,
         source: "manual-input",
@@ -171,6 +181,7 @@ export function SpreadsheetTable({
         amount: null,
         categoryId: null,
         accountId: sourceRow ? sourceRow.accountId : null,
+        labelIds: [],
         notes: "",
       };
       newData.splice(index + 1, 0, newRow);
@@ -193,13 +204,14 @@ export function SpreadsheetTable({
       getColumns({
         categories,
         accounts,
+        labels,
         viewMode,
         insertRowBelow,
         deleteRow,
         onEditGroupedItems,
         onResolveDuplicate,
       }),
-    [categories, accounts, viewMode, insertRowBelow, deleteRow, onEditGroupedItems, onResolveDuplicate]
+    [categories, accounts, labels, viewMode, insertRowBelow, deleteRow, onEditGroupedItems, onResolveDuplicate]
   );
 
   const table = useReactTable({
@@ -242,6 +254,27 @@ export function SpreadsheetTable({
   const checkboxShiftRef = React.useRef(false);
   const lastCheckedRowIndex = React.useRef<number | null>(null);
   const lastCheckedValue = React.useRef<boolean>(true);
+  // Ctrl+drag that starts on an already-selected cell removes cells instead of
+  // adding them. These refs keep the subtract-mode gesture state.
+  const isSubtractDragRef = React.useRef(false);
+  const subtractDragStartRef = React.useRef<{ rowIndex: number; colIndex: number } | null>(null);
+  const subtractBaseRangesRef = React.useRef<CellRange[]>([]);
+
+  // Shared by cell hover and the auto-scroll loop: while a subtract drag is
+  // active, sweep the rect under the cursor out of the drag-start selection.
+  const applyDragPosition = React.useCallback(
+    (rowIndex: number, colIndex: number) => {
+      const start = subtractDragStartRef.current;
+      if (isSubtractDragRef.current && start) {
+        const rect = rangeBetween(start, { rowIndex, colIndex });
+        setMultiSelections(subtractRangeFromRanges(subtractBaseRangesRef.current, rect));
+      } else {
+        setSelectionFocus({ rowIndex, colIndex });
+      }
+    },
+    [setMultiSelections, setSelectionFocus]
+  );
+
   const [contextMenu, setContextMenu] = React.useState<{ x: number; y: number; rowIndex: number; colIndex: number } | null>(null);
 
   // Column handler context — shared across all cell update operations
@@ -249,14 +282,21 @@ export function SpreadsheetTable({
     const ctx: ColumnHandlerContext = {
       categories,
       accounts,
+      labels,
       contraKeywords,
       keywordMappings,
     };
     if (onCategoryChange) {
       ctx.onCategoryChange = onCategoryChange;
     }
+    if (onLabelsChange) {
+      ctx.onLabelsChange = onLabelsChange;
+    }
+    ctx.notifyUnknownLabels = (unknownTokens: string[]) => {
+      toast.warning(`Label tidak dikenal diabaikan: ${unknownTokens.join(", ")}`);
+    };
     return ctx;
-  }, [categories, accounts, contraKeywords, keywordMappings, onCategoryChange]);
+  }, [categories, accounts, labels, contraKeywords, keywordMappings, onCategoryChange, onLabelsChange]);
 
   React.useEffect(() => {
     const handleClickOutside = () => setContextMenu(null);
@@ -311,7 +351,7 @@ export function SpreadsheetTable({
                 const rIdx = parseInt(cell.getAttribute("data-row-index") || "-1");
                 const cIdx = parseInt(cell.getAttribute("data-col-index") || "-1");
                 if (rIdx >= 0 && cIdx >= 0) {
-                  setSelectionFocus({ rowIndex: rIdx, colIndex: cIdx });
+                  applyDragPosition(rIdx, cIdx);
                 }
               }
             }
@@ -327,6 +367,9 @@ export function SpreadsheetTable({
 
     const stopDrag = () => {
       isDragging.current = false;
+      isSubtractDragRef.current = false;
+      subtractDragStartRef.current = null;
+      subtractBaseRangesRef.current = [];
       if (autoScrollInterval.current) {
         clearInterval(autoScrollInterval.current);
         autoScrollInterval.current = null;
@@ -340,7 +383,7 @@ export function SpreadsheetTable({
       window.removeEventListener("mouseup", stopDrag);
       if (autoScrollInterval.current) clearInterval(autoScrollInterval.current);
     };
-  }, [setSelectionFocus]);
+  }, [setSelectionFocus, applyDragPosition]);
 
   const getCellValue = React.useCallback(
     (row: TransactionRow, colKey: string): string => getColumnCellValue(row, colKey, columnHandlerContext),
@@ -426,31 +469,18 @@ export function SpreadsheetTable({
   }, [selectionRange, multiSelections, table, columns, getCellValue, onCopyRows]);
 
   // Copy All / Copy Selected Rows button
+  // Output is remapped to the Google Sheets column layout used by the user:
+  // Date | Account | Category | Amount | Item | <empty> | Labels
   const handleCopyRows = React.useCallback(() => {
     const selectedRows = table.getFilteredSelectedRowModel().rows;
     const rowsToCopy = selectedRows.length > 0 ? selectedRows : table.getRowModel().rows;
     if (rowsToCopy.length === 0) return;
 
-    const headers = ["Date", "Account", "Category", "Amount", "Item"];
-    const sanitize = (s: string) => {
-      if (s.includes("\n") || s.includes("\r") || s.includes("\t") || s.includes('"')) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
+    const finalTsv = formatRowsForSheets(
+      rowsToCopy.map((r) => r.original),
+      { labels, categories, accounts, includeHeader },
+    );
 
-    const tsvData = rowsToCopy.map((row) => {
-      const t = row.original;
-      return [
-        sanitize(t.date || ""),
-        sanitize(accounts.find((a) => a.id === t.accountId)?.name || ""),
-        sanitize(categories.find((c) => c.id === t.categoryId)?.name || ""),
-        t.amount !== null && t.amount !== undefined ? t.amount.toString() : "",
-        sanitize(t.item || ""),
-      ].join("\t");
-    });
-
-    const finalTsv = includeHeader ? [headers.join("\t"), ...tsvData].join("\n") : tsvData.join("\n");
     navigator.clipboard.writeText(finalTsv).then(() => {
       setCopyFlash(true);
       setTimeout(() => setCopyFlash(false), 600);
@@ -458,7 +488,7 @@ export function SpreadsheetTable({
         onCopyRows(rowsToCopy.map((r) => r.original));
       }
     });
-  }, [table, categories, accounts, onCopyRows, includeHeader]);
+  }, [table, categories, accounts, labels, onCopyRows, includeHeader]);
 
   const handleDeleteSelectedRows = React.useCallback(() => {
     const selectedRows = table.getFilteredSelectedRowModel().rows;
@@ -503,6 +533,11 @@ export function SpreadsheetTable({
       setEditingCell({ rowIndex, colIndex });
       if (initialValue !== undefined) {
         setEditValue(initialValue);
+      } else if (key === "labelIds") {
+        // The raw cell value is a list of label ids (e.g. "abc,def"). Showing
+        // it in the editor's search box is confusing and filters the list to
+        // nothing; labels render as names inside the dropdown instead.
+        setEditValue("");
       } else {
         const val = row[key as keyof TransactionRow];
         setEditValue(val !== null && val !== undefined ? String(val) : "");
@@ -644,6 +679,24 @@ export function SpreadsheetTable({
               onClose={() => cancelEdit(rowIndex, colIndex)}
             />
           );
+        case "labelIds": {
+          const rowModel = table.getRowModel().rows[rowIndex];
+          const origIndex = rowModel ? rowModel.index : rowIndex;
+          const currentRow = tableData[origIndex];
+          const currentIds = Array.isArray(currentRow?.labelIds) ? currentRow!.labelIds : [];
+          const isSerialized = editValue.trim().startsWith("[");
+          return (
+            <LabelMultiSelectDropdown
+              options={labels}
+              initialIds={currentIds}
+              initialSearch={isSerialized ? "" : editValue}
+              onCommitDown={(ids) => saveAndMoveDown(rowIndex, colIndex, serializeLabelIds(ids))}
+              onCommitRight={(ids) => saveAndMoveRight(rowIndex, colIndex, serializeLabelIds(ids))}
+              onCommitStay={(ids) => saveEdit(rowIndex, colIndex, serializeLabelIds(ids))}
+              onCancel={() => cancelEdit(rowIndex, colIndex)}
+            />
+          );
+        }
         case "date":
           return (
             <input
@@ -678,7 +731,7 @@ export function SpreadsheetTable({
           return null; // text columns use FloatingEditor, handled in JSX
       }
     },
-    [accounts, categories, editValue, saveAndMoveDown, saveAndMoveRight, cancelEdit, saveEdit, tableData, focusCell]
+    [accounts, categories, labels, editValue, saveAndMoveDown, saveAndMoveRight, cancelEdit, saveEdit, tableData, focusCell, table]
   );
 
   // Mouse handlers for drag-selection
@@ -692,16 +745,41 @@ export function SpreadsheetTable({
     e.preventDefault();
 
     if (e.ctrlKey || e.metaKey) {
-      if (selectionRange) {
-        setMultiSelections((prev) => [...prev, selectionRange]);
+      if (isCellSelected(rowIndex, colIndex)) {
+        // Toggle off: Ctrl+click/drag that starts on an already-selected cell
+        // removes cells instead of adding them. Drag-start selection is kept as
+        // the base and the swept rectangle is subtracted from it live while the
+        // user drags; a plain click removes just that one cell.
+        const baseRanges = [...multiSelections];
+        if (selectionRange) baseRanges.push(selectionRange);
+
+        isSubtractDragRef.current = true;
+        subtractDragStartRef.current = { rowIndex, colIndex };
+        subtractBaseRangesRef.current = baseRanges;
+
+        const rect = rangeBetween({ rowIndex, colIndex }, { rowIndex, colIndex });
+        setMultiSelections(subtractRangeFromRanges(baseRanges, rect));
+        setSelectionAnchor(null);
+        setSelectionFocus(null);
+      } else {
+        // Add mode: Ctrl+click/drag from an unselected cell extends the selection.
+        isSubtractDragRef.current = false;
+        subtractDragStartRef.current = null;
+        if (selectionRange) {
+          setMultiSelections((prev) => [...prev, selectionRange]);
+        }
+        setSelectionAnchor({ rowIndex, colIndex });
+        setSelectionFocus({ rowIndex, colIndex });
       }
-      setSelectionAnchor({ rowIndex, colIndex });
-      setSelectionFocus({ rowIndex, colIndex });
     } else if (e.shiftKey && selectionAnchor) {
       // Extend current selection
+      isSubtractDragRef.current = false;
+      subtractDragStartRef.current = null;
       setSelectionFocus({ rowIndex, colIndex });
     } else {
       // Start new selection
+      isSubtractDragRef.current = false;
+      subtractDragStartRef.current = null;
       setMultiSelections([]);
       setSelectionAnchor({ rowIndex, colIndex });
       setSelectionFocus({ rowIndex, colIndex });
@@ -713,7 +791,7 @@ export function SpreadsheetTable({
 
   const handleCellMouseEnter = (rowIndex: number, colIndex: number, isSelectCol: boolean) => {
     if (!isDragging.current || isSelectCol) return;
-    setSelectionFocus({ rowIndex, colIndex });
+    applyDragPosition(rowIndex, colIndex);
     focusCell(rowIndex, colIndex);
   };
 
@@ -782,6 +860,7 @@ export function SpreadsheetTable({
                 amount: null,
                 categoryId: null,
                 accountId: sourceRow ? sourceRow.accountId : null,
+                labelIds: [],
                 notes: "",
               });
             }
@@ -1150,7 +1229,7 @@ export function SpreadsheetTable({
                             className={[
                               "relative border-r border-border p-0 transition-colors",
                               isEditing ? "ring-1 ring-primary ring-inset z-10" : "",
-                              selected && !isEditing ? "bg-blue-500/20 outline outline-1 outline-blue-400" : "",
+                              selected && !isEditing ? "bg-blue-500/20 ring-1 ring-inset ring-blue-400" : "",
                               !selected && !isEditing ? "focus-within:ring-1 focus-within:ring-primary focus-within:ring-inset" : "",
                             ].join(" ")}
                             tabIndex={isEditing && !isDropdown ? -1 : 0}

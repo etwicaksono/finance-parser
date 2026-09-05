@@ -1,5 +1,6 @@
 import { TransactionRow, CategoryOption } from "@/types";
 import { formatPriceAnnotation } from "../parser/price-annotation";
+import { sortedLabelIds } from "../labels/label-utils";
 
 /**
  * Appends a shorthand price annotation to an item name (e.g. "Boba => 25k").
@@ -12,16 +13,17 @@ export function formatItemWithPrice(item: string, amount: number | null | undefi
 }
 
 /**
- * Builds the identity of a grouped row. Rows only merge when date, category and
- * account all match, so an account edited in Raw View never collapses into a
- * group that belongs to a different account.
+ * Builds the identity of a grouped row. Rows only merge when date, category,
+ * account and label set all match, so labels never bleed across groups and an
+ * account/category edited in Raw View never collapses into the wrong group.
  */
 export function buildGroupKey(row: TransactionRow, categories: CategoryOption[]): string {
   let catForGrouping = "Unknown";
   if (row.categoryId) {
     catForGrouping = categories.find((c) => c.id === row.categoryId)?.name || row.categoryId;
   }
-  return `${row.date}::${catForGrouping}::${row.accountId ?? "no-account"}`;
+  const labelPart = sortedLabelIds(row.labelIds ?? []).join(",");
+  return `${row.date}::${catForGrouping}::${row.accountId ?? "no-account"}::${labelPart || "-"}`;
 }
 
 /**
@@ -40,10 +42,14 @@ export function computeGroupedTransactions(
   >();
 
   for (const rawRow of raw) {
-    const key = buildGroupKey(rawRow, categories);
+    const rowForGrouping: TransactionRow = {
+      ...rawRow,
+      labelIds: sortedLabelIds(rawRow.labelIds),
+    };
+    const key = buildGroupKey(rowForGrouping, categories);
     const existing = map.get(key);
-    const baseName = (rawRow.item || "").split("=>")[0]?.trim() || "";
-    const amount = rawRow.amount ?? 0;
+    const baseName = (rowForGrouping.item || "").split("=>")[0]?.trim() || "";
+    const amount = rowForGrouping.amount ?? 0;
 
     if (existing) {
       existing.amount = (existing.amount ?? 0) + amount;
@@ -55,14 +61,14 @@ export function computeGroupedTransactions(
         existing.subItems.set(baseName, { amount, count: 1 });
       }
 
-      if (rawRow.notes && !(existing.notes || "").includes(rawRow.notes)) {
-        existing.notes = [existing.notes, rawRow.notes].filter(Boolean).join(" | ");
+      if (rowForGrouping.notes && !(existing.notes || "").includes(rowForGrouping.notes)) {
+        existing.notes = [existing.notes, rowForGrouping.notes].filter(Boolean).join(" | ");
       }
-      existing.rawItemIds!.push(rawRow.id);
+      existing.rawItemIds!.push(rowForGrouping.id);
     } else {
       const subItems = new Map<string, { amount: number; count: number }>();
       subItems.set(baseName, { amount, count: 1 });
-      map.set(key, { ...rawRow, id: key, rawItemIds: [rawRow.id], subItems, amount });
+      map.set(key, { ...rowForGrouping, id: key, rawItemIds: [rowForGrouping.id], subItems, amount });
     }
   }
 
@@ -133,8 +139,10 @@ export function applyGroupedChanges(
     const categoryChanged = oldRow.categoryId !== newRow.categoryId;
     const accountChanged = oldRow.accountId !== newRow.accountId;
     const dateChanged = oldRow.date !== newRow.date;
+    const labelChanged =
+      (oldRow.labelIds ?? []).join("|") !== (newRow.labelIds ?? []).join("|");
 
-    if (categoryChanged || accountChanged || dateChanged) {
+    if (categoryChanged || accountChanged || dateChanged || labelChanged) {
       updatedRaw = updatedRaw.map((rawRow) => {
         if (newRow.rawItemIds?.includes(rawRow.id)) {
           return {
@@ -142,6 +150,7 @@ export function applyGroupedChanges(
             ...(categoryChanged && { categoryId: newRow.categoryId }),
             ...(accountChanged && { accountId: newRow.accountId }),
             ...(dateChanged && { date: newRow.date }),
+            ...(labelChanged && { labelIds: newRow.labelIds ?? [] }),
           };
         }
         return rawRow;

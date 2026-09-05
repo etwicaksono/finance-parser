@@ -1,14 +1,16 @@
 import { getCategories } from "@/actions/categories";
 import { getAccounts } from "@/actions/accounts";
+import { getLabels } from "@/actions/labels";
 import { SettingsClient } from "@/components/settings/settings-client";
-import { CategoryOption, AccountOption } from "@/types";
+import { CategoryOption, AccountOption, LabelOption } from "@/types";
 
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
-  const [categoriesRes, accountsRes] = await Promise.all([
+  const [categoriesRes, accountsRes, labelsRes] = await Promise.all([
     getCategories(),
     getAccounts(),
+    getLabels(),
   ]);
   
   const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: { id: string; name: string }) => ({
@@ -21,10 +23,16 @@ export default async function SettingsPage() {
     name: acc.name,
   }));
 
+  const labels: LabelOption[] = (labelsRes.data || []).map((label: { id: string; name: string }) => ({
+    id: label.id,
+    name: label.name,
+  }));
+
   return (
     <SettingsClient 
       categories={categories} 
       accounts={accounts} 
+      labels={labels} 
     />
   );
 }

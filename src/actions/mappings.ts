@@ -1,16 +1,108 @@
 "use server";
 
 import { db } from "@/db";
-import { keywordMappings } from "@/db/schema";
-import { eq, like, sql, count, inArray, and, asc, desc } from "drizzle-orm";
+import { keywordMappings, keywordMappingLabels, labels } from "@/db/schema";
+import { eq, like, count, inArray, and, asc, desc, sql } from "drizzle-orm";
 import { cleanKeyword } from "@/lib/keyword-utils";
 import { getKeywordCleaningRules } from "@/actions/keyword-cleaning-rules";
 import { revalidatePath } from "next/cache";
 
 const PAGE_SIZE = 100;
 
-export async function getMappings(options?: { 
-  page?: number; 
+type MappingRow = typeof keywordMappings.$inferSelect;
+
+/** Mapping row decorated with the ids of its attached labels. */
+export type MappingWithLabels = MappingRow & { labelIds: string[] };
+
+// ---------------------------------------------------------------------------
+// Internal helpers (not exported: Next.js server actions must be async fns)
+// ---------------------------------------------------------------------------
+
+/** Keep only label ids that actually exist in the labels table. */
+async function resolveExistingLabelIds(labelIds?: string[]): Promise<string[]> {
+  const unique = [...new Set((labelIds ?? []).filter((id) => Boolean(id)))];
+  if (unique.length === 0) return [];
+
+  const found = await db
+    .select({ id: labels.id })
+    .from(labels)
+    .where(inArray(labels.id, unique));
+
+  const existing = new Set(found.map((row) => row.id));
+  return unique.filter((id) => existing.has(id));
+}
+
+/** Replace the full label set of a mapping (delete + insert is transactional per mapping). */
+async function replaceMappingLabels(mappingId: string, labelIds: string[]): Promise<void> {
+  const valid = await resolveExistingLabelIds(labelIds);
+  await db
+    .delete(keywordMappingLabels)
+    .where(eq(keywordMappingLabels.keywordMappingId, mappingId));
+
+  if (valid.length === 0) return;
+
+  await db.insert(keywordMappingLabels).values(
+    valid.map((labelId) => ({ keywordMappingId: mappingId, labelId }))
+  );
+}
+
+/** Decorate mapping rows with their label ids in a single extra query. */
+async function attachLabelIds(rows: MappingRow[]): Promise<MappingWithLabels[]> {
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((row) => row.id);
+  const relations = await db
+    .select({
+      keywordMappingId: keywordMappingLabels.keywordMappingId,
+      labelId: keywordMappingLabels.labelId,
+    })
+    .from(keywordMappingLabels)
+    .where(inArray(keywordMappingLabels.keywordMappingId, ids));
+
+  const grouped = new Map<string, string[]>();
+  for (const relation of relations) {
+    const list = grouped.get(relation.keywordMappingId) ?? [];
+    if (!list.includes(relation.labelId)) list.push(relation.labelId);
+    grouped.set(relation.keywordMappingId, list);
+  }
+
+  return rows.map((row) => ({ ...row, labelIds: grouped.get(row.id) ?? [] }));
+}
+
+/** Best-effort cache invalidation; no-ops when invoked outside the Next runtime. */
+function revalidateCache() {
+  try {
+    revalidatePath("/");
+    revalidatePath("/settings");
+  } catch {
+    // Out-of-band execution (scripts, tests) has no static generation store.
+  }
+}
+
+async function findMappingByKeyword(keyword: string): Promise<MappingRow | null> {
+  const result = await db
+    .select()
+    .from(keywordMappings)
+    .where(eq(keywordMappings.keyword, keyword))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+async function findMappingById(id: string): Promise<MappingRow | null> {
+  const result = await db
+    .select()
+    .from(keywordMappings)
+    .where(eq(keywordMappings.id, id))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Read queries
+// ---------------------------------------------------------------------------
+
+export async function getMappings(options?: {
+  page?: number;
   search?: string;
   categoryId?: string;
   sortBy?: "keyword" | "usageCount" | "updatedAt";
@@ -24,14 +116,19 @@ export async function getMappings(options?: {
     const conditions = [];
     if (search) conditions.push(like(keywordMappings.keyword, `%${search}%`));
     if (options?.categoryId && options.categoryId !== "all") conditions.push(eq(keywordMappings.categoryId, options.categoryId));
-    
+
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     let orderCol;
     switch (options?.sortBy) {
-      case "usageCount": orderCol = keywordMappings.usageCount; break;
-      case "updatedAt": orderCol = keywordMappings.updatedAt; break;
-      default: orderCol = keywordMappings.keyword;
+      case "usageCount":
+        orderCol = keywordMappings.usageCount;
+        break;
+      case "updatedAt":
+        orderCol = keywordMappings.updatedAt;
+        break;
+      default:
+        orderCol = keywordMappings.keyword;
     }
     const orderClause = options?.sortOrder === "desc" ? desc(orderCol) : asc(orderCol);
 
@@ -50,7 +147,8 @@ export async function getMappings(options?: {
     ]);
 
     const total = totalResult[0]?.count ?? 0;
-    return { data, total, page, pageSize: PAGE_SIZE };
+    const decorated = await attachLabelIds(data);
+    return { data: decorated, total, page, pageSize: PAGE_SIZE };
   } catch (error) {
     console.error("Failed to fetch mappings:", error);
     return { error: "Failed to fetch mappings" };
@@ -64,44 +162,97 @@ export async function getAllMappings() {
       .select()
       .from(keywordMappings)
       .orderBy(keywordMappings.keyword);
-    return { data };
+
+    const decorated = await attachLabelIds(data);
+    return { data: decorated };
   } catch (error) {
     console.error("Failed to fetch all mappings:", error);
     return { error: "Failed to fetch mappings" };
   }
 }
 
-export async function addMapping(keyword: string, categoryId: string, createdBy: string = "user") {
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert or update a keyword mapping.
+ *
+ * Backward compatible with callers that pass `createdBy` positionally as a
+ * string. Label-aware callers can pass `{ labelIds, createdBy }` as the third
+ * argument. `categoryId` is optional: a label-only mapping is valid.
+ */
+export async function addMapping(
+  keyword: string,
+  categoryId?: string | null,
+  options?: string | { labelIds?: string[]; createdBy?: string }
+) {
   if (!keyword || keyword.trim() === "") {
     return { error: "Keyword is required" };
   }
-  if (!categoryId) {
-    return { error: "Category ID is required" };
+
+  let labelIds: string[] = [];
+  let createdBy = "user";
+  let hasLabelOptions = false;
+  if (typeof options === "string") {
+    createdBy = options;
+  } else if (options) {
+    hasLabelOptions = "labelIds" in options;
+    labelIds = options.labelIds ?? [];
+    createdBy = options.createdBy ?? "user";
   }
 
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
   try {
+    const existing = await findMappingByKeyword(normalizedKeyword);
+
+    if (existing) {
+      const nextCategoryId = categoryId ?? existing.categoryId;
+      const sameCategory = existing.categoryId === nextCategoryId;
+      const nextUsage = sameCategory ? existing.usageCount + 1 : 1;
+      const nextUpdatedBy = sameCategory ? existing.updatedBy : createdBy;
+
+      await db
+        .update(keywordMappings)
+        .set({
+          categoryId: nextCategoryId,
+          usageCount: nextUsage,
+          updatedBy: nextUpdatedBy,
+          updatedAt: new Date(),
+        })
+        .where(eq(keywordMappings.id, existing.id));
+
+      // Only replace labels when the caller explicitly passed labelIds so
+      // category-only updates (e.g. manual/AI mapping) never wipe stored labels.
+      if (hasLabelOptions) {
+        await replaceMappingLabels(existing.id, labelIds);
+      }
+
+      const updated = await findMappingById(existing.id);
+      const decorated = await attachLabelIds(updated ? [updated] : []);
+
+      revalidateCache();
+      return { data: decorated[0] };
+    }
+
     const inserted = await db
       .insert(keywordMappings)
-      .values({ 
-        keyword: keyword.trim().toLowerCase(), 
-        categoryId,
-        usageCount: 1, 
+      .values({
+        keyword: normalizedKeyword,
+        categoryId: categoryId ?? null,
+        usageCount: 1,
         createdBy,
         updatedBy: createdBy,
       })
-      .onConflictDoUpdate({
-        target: keywordMappings.keyword,
-        set: { 
-          categoryId,
-          usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = ${categoryId} THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`, 
-          updatedBy: sql`CASE WHEN ${keywordMappings.categoryId} = ${categoryId} THEN ${keywordMappings.updatedBy} ELSE ${createdBy} END`,
-          updatedAt: new Date() 
-        }
-      })
       .returning();
-      
-    revalidatePath("/");
-    return { data: inserted[0] };
+
+    await replaceMappingLabels(inserted[0]!.id, labelIds);
+    const row = inserted[0]!;
+    const decorated = await attachLabelIds([row]);
+
+    revalidateCache();
+    return { data: decorated[0] };
   } catch (error: unknown) {
     console.error("Failed to add mapping:", error);
     const msg = error instanceof Error ? error.message : "";
@@ -112,7 +263,10 @@ export async function addMapping(keyword: string, categoryId: string, createdBy:
   }
 }
 
-export async function batchAddMappings(mappings: { keyword: string; categoryId: string }[], createdBy: string = "user") {
+export async function batchAddMappings(
+  mappings: { keyword: string; categoryId: string }[],
+  createdBy: string = "user"
+) {
   const validMappings = mappings.filter((m) => m.keyword && m.keyword.trim() !== "" && m.categoryId);
   if (validMappings.length === 0) return { error: "No valid mappings provided" };
 
@@ -138,15 +292,13 @@ export async function batchAddMappings(mappings: { keyword: string; categoryId: 
         },
       });
 
-    revalidatePath("/");
+    revalidateCache();
     return { success: true };
   } catch (error) {
     console.error("Failed to batch add mappings:", error);
     return { error: "Failed to batch add mappings" };
   }
 }
-
-
 
 export async function deleteMapping(id: string) {
   if (!id) {
@@ -155,7 +307,7 @@ export async function deleteMapping(id: string) {
 
   try {
     const deleted = await db.delete(keywordMappings).where(eq(keywordMappings.id, id)).returning();
-    revalidatePath("/");
+    revalidateCache();
     return { data: deleted[0] };
   } catch (error) {
     console.error("Failed to delete mapping:", error);
@@ -163,26 +315,51 @@ export async function deleteMapping(id: string) {
   }
 }
 
-export async function updateMapping(id: string, newKeyword: string, newCategoryId: string) {
+/**
+ * Update keyword/category of a mapping. When `labelIds` is provided the label
+ * set is replaced; otherwise existing labels are preserved.
+ */
+export async function updateMapping(
+  id: string,
+  newKeyword: string,
+  newCategoryId?: string | null,
+  labelIds?: string[]
+) {
   if (!id) return { error: "Mapping ID is required" };
   if (!newKeyword || newKeyword.trim() === "") return { error: "Keyword is required" };
-  if (!newCategoryId) return { error: "Category ID is required" };
 
   try {
-    const updated = await db
+    const existing = await findMappingById(id);
+    if (!existing) return { error: "Mapping not found" };
+
+    const keywordChanged = existing.keyword !== newKeyword.trim().toLowerCase();
+    const categoryChanged = newCategoryId !== undefined && existing.categoryId !== newCategoryId;
+
+    await db
       .update(keywordMappings)
       .set({
-        keyword: newKeyword.trim().toLowerCase(),
-        categoryId: newCategoryId,
-        updatedBy: "user",
-        updatedAt: new Date(),
+        ...(keywordChanged && { keyword: newKeyword.trim().toLowerCase() }),
+        ...(categoryChanged && { categoryId: newCategoryId ?? null }),
+        ...((keywordChanged || categoryChanged) && {
+          updatedBy: "user",
+          updatedAt: new Date(),
+        }),
       })
-      .where(eq(keywordMappings.id, id))
-      .returning();
-      
-    revalidatePath("/");
-    revalidatePath("/settings");
-    return { data: updated[0] };
+      .where(eq(keywordMappings.id, id));
+
+    if (labelIds) {
+      await replaceMappingLabels(id, labelIds);
+      await db
+        .update(keywordMappings)
+        .set({ updatedBy: "user", updatedAt: new Date() })
+        .where(eq(keywordMappings.id, id));
+    }
+
+    const updated = await findMappingById(id);
+    const decorated = await attachLabelIds(updated ? [updated] : []);
+
+    revalidateCache();
+    return { data: decorated[0] };
   } catch (error: unknown) {
     console.error("Failed to update mapping:", error);
     const msg = error instanceof Error ? error.message : "";
@@ -193,6 +370,87 @@ export async function updateMapping(id: string, newKeyword: string, newCategoryI
   }
 }
 
+/** Replace the label set of an existing mapping without touching keyword/category. */
+export async function updateMappingLabels(
+  id: string,
+  labelIds: string[],
+  updatedBy: string = "user"
+) {
+  if (!id) return { error: "Mapping ID is required" };
+
+  try {
+    await replaceMappingLabels(id, labelIds);
+    await db
+      .update(keywordMappings)
+      .set({ updatedBy, updatedAt: new Date() })
+      .where(eq(keywordMappings.id, id));
+
+    const updated = await findMappingById(id);
+    const decorated = await attachLabelIds(updated ? [updated] : []);
+
+    revalidateCache();
+    return { data: decorated[0] };
+  } catch (error) {
+    console.error("Failed to update mapping labels:", error);
+    return { error: "Failed to update mapping labels." };
+  }
+}
+
+/**
+ * Persist a label set for the keyword of an edited row. Creates the mapping
+ * (with a null category) when the keyword is not mapped yet; otherwise only
+ * the label relation is replaced so existing categories are preserved.
+ */
+export async function upsertMappingLabelsByKeyword(
+  keyword: string,
+  labelIds: string[],
+  createdBy: string = "user"
+) {
+  if (!keyword || keyword.trim() === "") {
+    return { error: "Keyword is required" };
+  }
+
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
+  try {
+    const existing = await findMappingByKeyword(normalizedKeyword);
+
+    if (existing) {
+      await replaceMappingLabels(existing.id, labelIds);
+      await db
+        .update(keywordMappings)
+        .set({ updatedBy: createdBy, updatedAt: new Date() })
+        .where(eq(keywordMappings.id, existing.id));
+
+      const updated = await findMappingById(existing.id);
+      const decorated = await attachLabelIds(updated ? [updated] : []);
+      revalidateCache();
+      return { data: decorated[0] };
+    }
+
+    const inserted = await db
+      .insert(keywordMappings)
+      .values({
+        keyword: normalizedKeyword,
+        categoryId: null,
+        usageCount: 1,
+        createdBy,
+        updatedBy: createdBy,
+      })
+      .returning();
+
+    await replaceMappingLabels(inserted[0]!.id, labelIds);
+    const row = inserted[0]!;
+    const decorated = await attachLabelIds([row]);
+
+    revalidateCache();
+    return { data: decorated[0] };
+  } catch (error: unknown) {
+    console.error("Failed to upsert mapping labels:", error);
+    return { error: "Failed to save labels" };
+  }
+}
+
 export async function cleanupMappings() {
   try {
     const allMappings = await db.select().from(keywordMappings);
@@ -200,7 +458,7 @@ export async function cleanupMappings() {
 
     // Group mappings by their cleaned keyword
     const { data: cleaningRules } = await getKeywordCleaningRules();
-    const groups: Record<string, typeof allMappings> = {};
+    const groups: Record<string, MappingRow[]> = {};
     for (const m of allMappings) {
       const cleaned = cleanKeyword(m.keyword, cleaningRules).toLowerCase();
       if (!groups[cleaned]) groups[cleaned] = [];
@@ -249,7 +507,6 @@ export async function cleanupMappings() {
 
     // 1. Delete duplicates first to avoid unique constraint violations
     if (idsToDelete.length > 0) {
-      // SQLite has a limit on parameters, so we chunk it if it's large (though pg doesn't, drizzle is safe with chunking)
       const chunkSize = 100;
       for (let i = 0; i < idsToDelete.length; i += chunkSize) {
         const chunk = idsToDelete.slice(i, i + chunkSize);
@@ -265,13 +522,10 @@ export async function cleanupMappings() {
         .where(eq(keywordMappings.id, update.id));
     }
 
-
-    revalidatePath("/");
-    revalidatePath("/settings");
+    revalidateCache();
     return { success: true, count: processedCount, deleted: idsToDelete.length };
   } catch (error) {
     console.error("Failed to cleanup mappings:", error);
     return { error: "Failed to cleanup mappings." };
   }
 }
-

@@ -10,6 +10,7 @@ describe("detectDuplicates", () => {
     date,
     categoryId: null,
     accountId: null,
+    labelIds: [],
     notes: "",
   });
 

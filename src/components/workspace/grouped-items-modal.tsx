@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { TransactionRow, CategoryOption, AccountOption } from "@/types";
+import { TransactionRow, CategoryOption, AccountOption, LabelOption } from "@/types";
 import { SpreadsheetTable } from "./spreadsheet";
 import { Button } from "@/components/ui/button";
 
@@ -11,8 +11,10 @@ interface GroupedItemsModalProps {
   rawTransactions: TransactionRow[];
   categories: CategoryOption[];
   accounts: AccountOption[];
+  labels?: LabelOption[];
   onRawTransactionsChange: (newData: TransactionRow[]) => void;
   onCategoryChange: (rowId: string, itemString: string, newCategoryId: string) => void;
+  onLabelsChange?: (rowId: string, itemString: string, labelIds: string[]) => void;
 }
 
 export function GroupedItemsModal({
@@ -22,8 +24,10 @@ export function GroupedItemsModal({
   rawTransactions,
   categories,
   accounts,
+  labels = [],
   onRawTransactionsChange,
-  onCategoryChange
+  onCategoryChange,
+  onLabelsChange
 }: GroupedItemsModalProps) {
   if (!groupRow || !groupRow.rawItemIds) return null;
 
@@ -74,9 +78,11 @@ export function GroupedItemsModal({
             data={groupedRawItems}
             categories={categories}
             accounts={accounts}
+            labels={labels}
             viewMode="raw"
             onDataChange={handleDataChange}
             onCategoryChange={onCategoryChange}
+            {...(onLabelsChange ? { onLabelsChange } : {})}
           />
         </div>
         <div className="flex justify-end pt-4 border-t">

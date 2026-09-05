@@ -36,6 +36,7 @@ export function findExactMatch(
 
     const result: SuggestionMatch = {
       categoryId: matchedMapping.categoryId,
+      labelIds: matchedMapping.labelIds ?? [],
       confidence,
       source: isAlias ? "alias" : "exact",
     };
@@ -58,6 +59,7 @@ export function findExactMatch(
 
     const result: SuggestionMatch = {
       categoryId: matchedSubstring.categoryId,
+      labelIds: matchedSubstring.labelIds ?? [],
       confidence,
       source: "exact", // conceptually it's an exact word match
     };

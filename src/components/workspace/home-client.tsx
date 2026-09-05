@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { MainWorkspace } from "@/components/layout/main-workspace";
 import { WhatsAppInput } from "@/components/workspace/whatsapp-input";
 import { SpreadsheetTable } from "@/components/workspace/spreadsheet";
-import { TransactionRow, CategoryOption, AccountOption, SessionImage } from "@/types";
+import { TransactionRow, CategoryOption, AccountOption, LabelOption, SessionImage } from "@/types";
 import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";
 import { detectDuplicates } from "@/features/validation/duplicate-detector";
@@ -13,7 +13,7 @@ import { getCategorySign } from "@/features/validation/category-sign";
 import { format } from "date-fns";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
-import { addMapping, batchAddMappings } from "@/actions/mappings";
+import { addMapping, batchAddMappings, upsertMappingLabelsByKeyword } from "@/actions/mappings";
 import { cleanKeyword, type KeywordCleaningRules } from "@/lib/keyword-utils";
 import { isIsoDateAmbiguous } from "@/features/parser/date-parser";
 import { formatPriceAnnotation } from "@/features/parser/price-annotation";
@@ -34,9 +34,19 @@ import { SessionSwitcher } from "./session-switcher";
 import { CategoryMultiSelect } from "./category-multi-select";
 import { computeGroupedTransactions as computeGrouped, applyGroupedChanges } from "@/features/grouping/group-transactions";
 
+/** Ensure rows loaded from legacy sessions always carry a labelIds array. */
+function normalizeRows(rows: TransactionRow[]): TransactionRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    ...row,
+    labelIds: Array.isArray(row.labelIds) ? row.labelIds : [],
+  }));
+}
+
 interface HomeClientProps {
   initialCategories: CategoryOption[];
   initialAccounts: AccountOption[];
+  initialLabels: LabelOption[];
   initialMappings: KeywordMapping[];
   initialContraKeywords?: string[];
   initialCleaningRules?: KeywordCleaningRules;
@@ -46,9 +56,10 @@ interface HomeClientProps {
   initialSessionId?: string | null;
 }
 
-export function HomeClient({ 
+export function HomeClient({
   initialCategories,
   initialAccounts,
+  initialLabels,
   initialMappings,
   initialContraKeywords = [],
   initialCleaningRules,
@@ -64,6 +75,7 @@ export function HomeClient({
     amount: null,
     categoryId: null,
     accountId: null,
+    labelIds: [],
     notes: "",
     source: "manual-input",
   }]);
@@ -117,7 +129,7 @@ export function HomeClient({
         const sess = await getSessionById(initialSessionId);
         if (sess) {
           setCurrentSessionId(sess.id);
-          setRawTransactions((sess.data as TransactionRow[]) || []);
+          setRawTransactions(normalizeRows((sess.data as TransactionRow[]) || []));
           setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
           justLoadedRef.current = true;
@@ -131,7 +143,7 @@ export function HomeClient({
         const sess = await getSessionById(sessions[0].id);
         if (sess) {
           setCurrentSessionId(sess.id);
-          setRawTransactions((sess.data as TransactionRow[]) || []);
+          setRawTransactions(normalizeRows((sess.data as TransactionRow[]) || []));
           setSessionImages((sess.images as SessionImage[]) || []);
           setSessionMetadata((sess.metadata as import("@/types").SessionMetadata) || {});
           justLoadedRef.current = true;
@@ -142,7 +154,7 @@ export function HomeClient({
       console.error(err);
       setIsLoadingSession(false);
     });
-  }, []);
+  }, [initialSessionId]);
 
   const handleNewSession = React.useCallback(async () => {
     setCurrentSessionId(null);
@@ -153,6 +165,7 @@ export function HomeClient({
       amount: null,
       categoryId: null,
       accountId: null,
+      labelIds: [],
       notes: "",
       source: "manual-input",
     }]);
@@ -241,20 +254,26 @@ export function HomeClient({
         
         const cleaned = cleanKeyword(row.item, cleaningRules);
         const suggestion = suggestCategory(cleaned, localMappings, []);
-        if (suggestion?.categoryId) {
-          row.categoryId = suggestion.categoryId;
-          const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
-          if (catName) {
-            const sign = getCategorySign(catName);
-            const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
-            
-            if (sign === "income") row.amount = row.amount ? Math.abs(row.amount) : row.amount;
-            else if (sign === "expense") {
-               if (isContraItem && row.amount && row.amount > 0) {
-                 // Do not force to negative if it's a contra item and already positive
-               } else {
-                 row.amount = row.amount ? -Math.abs(row.amount) : row.amount;
-               }
+        if (suggestion) {
+          // Labels travel with the keyword mapping and are applied even when the
+          // mapping has no category yet (label-only mappings).
+          row.labelIds = suggestion.labelIds ?? [];
+
+          if (suggestion.categoryId) {
+            row.categoryId = suggestion.categoryId;
+            const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
+            if (catName) {
+              const sign = getCategorySign(catName);
+              const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
+
+              if (sign === "income") row.amount = row.amount ? Math.abs(row.amount) : row.amount;
+              else if (sign === "expense") {
+                 if (isContraItem && row.amount && row.amount > 0) {
+                   // Do not force to negative if it's a contra item and already positive
+                 } else {
+                   row.amount = row.amount ? -Math.abs(row.amount) : row.amount;
+                 }
+              }
             }
           }
         } else {
@@ -291,9 +310,18 @@ export function HomeClient({
                   
                   const finalKeyword = aiCat.normalized_item_name || cleaned;
                   const createdBy = `AI (${localAiConfig.activeModel})`;
-                  addMapping(finalKeyword, matchedCategory.id, createdBy).then((newMapping) => {
-                    if (newMapping && Array.isArray(newMapping) && newMapping.length > 0) {
-                      setLocalMappings(prev => [...prev, newMapping[0]]);
+                  addMapping(finalKeyword, matchedCategory.id, createdBy).then((result) => {
+                    if (result && result.data) {
+                      setLocalMappings(prev => {
+                        const keyword = result.data!.keyword;
+                        const idx = prev.findIndex(m => m.keyword === keyword);
+                        if (idx !== -1) {
+                          const next = [...prev];
+                          next[idx] = result.data!;
+                          return next;
+                        }
+                        return [...prev, result.data!];
+                      });
                     }
                   }).catch(console.error);
                 }
@@ -393,6 +421,7 @@ export function HomeClient({
         if (rawIdx !== -1) {
            const newRow = { ...updatedRaw[rawIdx] } as TransactionRow;
            newRow.categoryId = match.categoryId;
+           newRow.labelIds = match.labelIds ?? [];
            newRow.isUnmappedItem = false;
 
            const catName = initialCategories.find(c => c.id === match.categoryId)?.name;
@@ -547,6 +576,7 @@ export function HomeClient({
         amount: t.amount,
         categoryId: null,
         accountId: null,
+        labelIds: [],
         notes: t.sender ? `Sender: ${t.sender}` : "",
         source: "chat",
         receiptName: batchName,
@@ -568,15 +598,36 @@ export function HomeClient({
       if (rawItem) {
         const isNew = !localMappings.some(m => m.keyword.toLowerCase() === rawItem.toLowerCase());
         if (isNew) {
-          addMapping(rawItem, newCategoryId, "Manual").then((newMapping) => {
-            if (newMapping && Array.isArray(newMapping) && newMapping.length > 0) {
-              setLocalMappings(prev => [...prev, newMapping[0]]);
+          addMapping(rawItem, newCategoryId, "Manual").then((result) => {
+            if (result && result.data) {
+              setLocalMappings(prev => [...prev, result.data!]);
             }
           }).catch(console.error);
         }
       }
     }
-  }, [localMappings]);
+  }, [localMappings, cleaningRules]);
+
+  const handleLabelsChange = React.useCallback((_rowId: string, itemString: string, labelIds: string[]) => {
+    const rawItems = itemString.split("\n").map(s => cleanKeyword(s, cleaningRules)).filter(Boolean);
+
+    for (const rawItem of rawItems) {
+      if (!rawItem) continue;
+      upsertMappingLabelsByKeyword(rawItem, labelIds, "Manual").then((result) => {
+        if (result && result.data) {
+          setLocalMappings(prev => {
+            const idx = prev.findIndex(m => m.keyword.toLowerCase() === rawItem.toLowerCase());
+            if (idx !== -1) {
+              const next = [...prev];
+              next[idx] = result.data!;
+              return next;
+            }
+            return [...prev, result.data!];
+          });
+        }
+      }).catch(console.error);
+    }
+  }, [cleaningRules]);
 
   const handleCopyRows = React.useCallback(async (copiedRows: TransactionRow[]) => {
     await ensureSession();
@@ -588,7 +639,7 @@ export function HomeClient({
     if (mappingsToBump.length > 0) {
       batchAddMappings(mappingsToBump).catch(console.error);
     }
-  }, [ensureSession]);
+  }, [ensureSession, cleaningRules]);
 
   const handleScan = async (images: { id: string; name: string; base64: string; mimeType: string }[], translateNames: boolean) => {
     setProcessingText("Scanning receipt via AI...");
@@ -624,6 +675,7 @@ export function HomeClient({
         amount: Number(r.amount) || null,
         categoryId: null,
         accountId: null,
+        labelIds: [],
         notes: "",
         source: "manual",
         receiptName: batchName,
@@ -765,7 +817,7 @@ export function HomeClient({
                                 onSessionChange={React.useCallback((id, data, images, metadata) => {
                 justLoadedRef.current = true;
                 setCurrentSessionId(id);
-                setRawTransactions(data);
+                setRawTransactions(normalizeRows(data));
                 setSessionImages(images || []);
                 setSessionMetadata(metadata || {});
                 setGroupAmountOverrides({});
@@ -781,11 +833,13 @@ export function HomeClient({
               viewMode={viewMode}
               categories={initialCategories}
               accounts={initialAccounts}
+              labels={initialLabels}
               contraKeywords={initialContraKeywords}
               keywordMappings={localMappings}
               onDataChange={handleDataChange}
                             onEditGroupedItems={React.useCallback((row) => setEditingGroupRow(row), [])}
               onCategoryChange={handleCategoryChange}
+              onLabelsChange={handleLabelsChange}
               onCopyRows={handleCopyRows}
               onAutoMapRows={handleAutoMapRows}
                             onResolveDuplicate={React.useCallback((rowIndex: number, action: "keep" | "remove") => {
@@ -815,8 +869,10 @@ export function HomeClient({
               rawTransactions={rawTransactions}
               categories={initialCategories}
               accounts={initialAccounts}
+              labels={initialLabels}
               onRawTransactionsChange={setRawTransactions}
               onCategoryChange={handleCategoryChange}
+              onLabelsChange={handleLabelsChange}
             />
           </div>
         }

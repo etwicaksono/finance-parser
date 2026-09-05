@@ -10,6 +10,11 @@ export interface AccountOption {
   name: string;
 }
 
+export interface LabelOption {
+  id: string;
+  name: string;
+}
+
 export interface SuggestionResult {
   categoryId?: string;
   accountId?: string;
@@ -30,6 +35,7 @@ export interface TransactionRow {
   amount: number | null; // Use null to represent empty/invalid amount in UI
   categoryId: string | null;
   accountId: string | null;
+  labelIds: string[];
   notes: string;
   // UI Specific State
   isDuplicate?: boolean;

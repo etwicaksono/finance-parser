@@ -1,7 +1,8 @@
-import { TransactionRow, CategoryOption, AccountOption } from "@/types";
+import { TransactionRow, CategoryOption, AccountOption, LabelOption } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { getCategorySign } from "@/features/validation/category-sign";
 import { extractAnnotatedAmount } from "@/features/parser/price-annotation";
+import { parseLabelValue, joinLabelNames } from "@/features/labels/label-utils";
 
 // ---------------------------------------------------------------------------
 // Context & Interfaces
@@ -10,9 +11,12 @@ import { extractAnnotatedAmount } from "@/features/parser/price-annotation";
 export interface ColumnHandlerContext {
   categories: CategoryOption[];
   accounts: AccountOption[];
+  labels: LabelOption[];
   contraKeywords: string[];
   keywordMappings: KeywordMapping[];
   onCategoryChange?: (rowId: string, item: string, newCategoryId: string) => void;
+  onLabelsChange?: (rowId: string, item: string, labelIds: string[]) => void;
+  notifyUnknownLabels?: (unknownTokens: string[]) => void;
 }
 
 export interface ColumnHandler {
@@ -135,6 +139,7 @@ const itemHandler: ColumnHandler = {
     if (!value.trim()) {
       row.amount = null;
       row.categoryId = null;
+      row.labelIds = [];
       row.isUnmappedItem = false;
       row.isCategoryManuallySet = false;
       return;
@@ -160,7 +165,7 @@ const itemHandler: ColumnHandler = {
 
     row.isCategoryManuallySet = false;
 
-    // Auto-map category from keyword mappings
+    // Auto-map category & labels from keyword mappings
     if (value.trim() && ctx.keywordMappings.length > 0) {
       const lowerItem = value.toLowerCase().trim();
       const match = ctx.keywordMappings.find((m) =>
@@ -169,6 +174,7 @@ const itemHandler: ColumnHandler = {
 
       if (match) {
         row.isUnmappedItem = false;
+        row.labelIds = match.labelIds ?? [];
         if (!row.isCategoryManuallySet) {
           row.categoryId = match.categoryId;
           if (typeof row.amount === "number") {
@@ -177,9 +183,11 @@ const itemHandler: ColumnHandler = {
         }
       } else {
         row.categoryId = null;
+        row.labelIds = [];
         row.isUnmappedItem = true;
       }
     } else {
+      row.labelIds = [];
       row.isUnmappedItem = false;
     }
   },
@@ -193,6 +201,30 @@ const notesHandler: ColumnHandler = {
     row.notes = value;
   },
   getCellValue: (row) => row.notes || "",
+};
+
+const labelIdsHandler: ColumnHandler = {
+  isEditable: true,
+  isDropdown: true,
+  applyUpdate: (row, value, ctx) => {
+    const parsed = parseLabelValue(value, ctx.labels ?? []);
+    const oldIds = row.labelIds ?? [];
+
+    if (parsed.unknownTokens.length > 0) {
+      ctx.notifyUnknownLabels?.(parsed.unknownTokens);
+    }
+
+    const newIds = parsed.ids;
+    row.labelIds = newIds;
+
+    const changed =
+      oldIds.length !== newIds.length || oldIds.some((id) => !newIds.includes(id));
+
+    if (changed && row.item) {
+      ctx.onLabelsChange?.(row.id, row.item, newIds);
+    }
+  },
+  getCellValue: (row, ctx) => joinLabelNames(row.labelIds ?? [], ctx.labels ?? []),
 };
 
 const receiptNameHandler: ColumnHandler = {
@@ -212,6 +244,7 @@ export const columnHandlers: Record<string, ColumnHandler> = {
   date: dateHandler,
   accountId: accountHandler,
   categoryId: categoryHandler,
+  labelIds: labelIdsHandler,
   amount: amountHandler,
   item: itemHandler,
   notes: notesHandler,

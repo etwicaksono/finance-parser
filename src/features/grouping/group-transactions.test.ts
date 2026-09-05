@@ -22,6 +22,7 @@ function row(overrides: Partial<TransactionRow> & { id: string }): TransactionRo
     amount: -10000,
     categoryId: "cat-food",
     accountId: null,
+    labelIds: [],
     notes: "",
     ...overrides,
   };
@@ -49,20 +50,32 @@ describe("formatItemWithPrice", () => {
 describe("buildGroupKey", () => {
   it("keys on date, category name and account", () => {
     expect(buildGroupKey(row({ id: "1", accountId: ACC_BCA }), categories)).toBe(
-      "2026-05-16::Food::acc-bca",
+      "2026-05-16::Food::acc-bca::-",
     );
   });
 
   it("falls back for missing category and account", () => {
     expect(buildGroupKey(row({ id: "1", categoryId: null }), categories)).toBe(
-      "2026-05-16::Unknown::no-account",
+      "2026-05-16::Unknown::no-account::-",
     );
   });
 
   it("falls back to the raw id for an unknown category", () => {
     expect(buildGroupKey(row({ id: "1", categoryId: "cat-ghost" }), categories)).toBe(
-      "2026-05-16::cat-ghost::no-account",
+      "2026-05-16::cat-ghost::no-account::-",
     );
+  });
+
+  it("distinguishes groups by label set", () => {
+    expect(
+      buildGroupKey(row({ id: "1", labelIds: ["L1", "L2"], accountId: ACC_BCA }), categories),
+    ).toBe("2026-05-16::Food::acc-bca::L1,L2");
+    expect(
+      buildGroupKey(row({ id: "2", labelIds: ["L2"], accountId: ACC_BCA }), categories),
+    ).toBe("2026-05-16::Food::acc-bca::L2");
+    expect(
+      buildGroupKey(row({ id: "3", labelIds: ["L2", "L1"], accountId: ACC_BCA }), categories),
+    ).toBe("2026-05-16::Food::acc-bca::L1,L2");
   });
 });
 
@@ -172,7 +185,7 @@ describe("computeGroupedTransactions (raw -> grouped)", () => {
       row({ id: "1", amount: -10000, accountId: ACC_BCA }),
       row({ id: "2", amount: -20000, accountId: ACC_BCA }),
     ];
-    const key = "2026-05-16::Food::acc-bca";
+    const key = "2026-05-16::Food::acc-bca::-";
 
     expect(computeGroupedTransactions(raw, { [key]: -50000 }, categories)[0]?.amount).toBe(-50000);
   });
@@ -184,6 +197,36 @@ describe("computeGroupedTransactions (raw -> grouped)", () => {
 
     expect(raw[0]?.item).toBe("Nasi => 10k");
     expect(raw[0]?.id).toBe("1");
+  });
+
+  it("does not merge rows whose label sets differ", () => {
+    const raw = [
+      row({ id: "1", item: "Nasi => 10k", amount: -10000, accountId: ACC_BCA, labelIds: ["L1"] }),
+      row({ id: "2", item: "Ayam => 20k", amount: -20000, accountId: ACC_BCA, labelIds: [] }),
+      row({ id: "3", item: "Teh => 5k", amount: -5000, accountId: ACC_BCA, labelIds: ["L1"] }),
+    ];
+
+    const grouped = computeGroupedTransactions(raw, {}, categories);
+
+    expect(grouped).toHaveLength(2);
+    const labeled = grouped.find((g) => g.labelIds.join(",") === "L1")!;
+    expect(labeled.rawItemIds).toEqual(["1", "3"]);
+    expect(labeled.amount).toBe(-15000);
+    const unlabeled = grouped.find((g) => g.labelIds.length === 0)!;
+    expect(unlabeled.rawItemIds).toEqual(["2"]);
+  });
+
+  it("merges rows with the same label set regardless of order", () => {
+    const raw = [
+      row({ id: "1", item: "Nasi => 10k", accountId: ACC_BCA, labelIds: ["L2", "L1"] }),
+      row({ id: "2", item: "Ayam => 20k", accountId: ACC_BCA, labelIds: ["L1", "L2"] }),
+    ];
+
+    const grouped = computeGroupedTransactions(raw, {}, categories);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.rawItemIds).toEqual(["1", "2"]);
+    expect(grouped[0]?.labelIds).toEqual(["L1", "L2"]);
   });
 
   it("returns an empty array for empty input", () => {
@@ -239,6 +282,19 @@ describe("applyGroupedChanges (grouped -> raw)", () => {
       expect(updated?.categoryId).toBe("cat-transport");
       expect(updated?.date).toBe("2026-05-20");
     }
+  });
+
+  it("fans a label edit out to the group's raw rows", () => {
+    const target = display.find((g) => g.accountId === ACC_BCA)!;
+    const edited = display.map((g) =>
+      g.id === target.id ? { ...g, labelIds: ["L1", "L2"] } : g,
+    );
+
+    const result = applyGroupedChanges(edited, display, raw, {});
+
+    expect(result.rawTransactions.find((r) => r.id === "1")?.labelIds).toEqual(["L1", "L2"]);
+    expect(result.rawTransactions.find((r) => r.id === "2")?.labelIds).toEqual(["L1", "L2"]);
+    expect(result.rawTransactions.find((r) => r.id === "3")?.labelIds).toEqual([]);
   });
 
   it("records an amount edit as a group override without touching raw amounts", () => {

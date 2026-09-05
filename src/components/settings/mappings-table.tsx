@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getMappings, addMapping, deleteMapping, updateMapping, cleanupMappings } from "@/actions/mappings";
+import { getMappings, addMapping, deleteMapping, updateMapping, updateMappingLabels, cleanupMappings } from "@/actions/mappings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Plus, Loader2, ChevronLeft, ChevronRight, Search, Check, ChevronsUpDown, Sparkles, ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
@@ -28,7 +28,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CategoryOption } from "@/types";
+import { CategoryOption, LabelOption } from "@/types";
+import { joinLabelNames } from "@/features/labels/label-utils";
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 
@@ -38,6 +39,7 @@ type Mapping = {
   id: string;
   keyword: string;
   categoryId: string | null;
+  labelIds: string[];
   usageCount: number;
   updatedAt: Date | string | null;
   createdBy: string;
@@ -46,9 +48,10 @@ type Mapping = {
 
 interface MappingsTableProps {
   categories: CategoryOption[];
+  labels: LabelOption[];
 }
 
-export function MappingsTable({ categories }: MappingsTableProps) {
+export function MappingsTable({ categories, labels }: MappingsTableProps) {
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -174,6 +177,19 @@ export function MappingsTable({ categories }: MappingsTableProps) {
       toast.error(result.error);
     } else {
       toast.success("Mapping updated");
+    }
+  };
+
+  const handleLabelsUpdate = async (id: string, labelIds: string[]) => {
+    const previous = [...mappings];
+    setMappings((prev) => prev.map(m => m.id === id ? { ...m, labelIds } : m));
+
+    const result = await updateMappingLabels(id, labelIds, "user");
+    if (result.error) {
+      setMappings(previous);
+      toast.error(result.error);
+    } else {
+      toast.success("Labels updated");
     }
   };
 
@@ -339,6 +355,7 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                   Keyword {renderSortIcon("keyword")}
                 </th>
                 <th className="px-4 py-2 font-medium">Category</th>
+                <th className="px-4 py-2 font-medium">Labels</th>
                 <th className="px-4 py-2 font-medium cursor-pointer hover:bg-muted-foreground/10 select-none w-20 text-center" onClick={() => handleSort("usageCount")}>
                   Usage {renderSortIcon("usageCount")}
                 </th>
@@ -351,7 +368,7 @@ export function MappingsTable({ categories }: MappingsTableProps) {
             <tbody className="divide-y">
               {mappings.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                     {debouncedSearch ? `No mappings found for "${debouncedSearch}"` : "No mappings found."}
                   </td>
                 </tr>
@@ -381,6 +398,14 @@ export function MappingsTable({ categories }: MappingsTableProps) {
                         categories={categories}
                         value={mapping.categoryId || ""}
                         onChange={(val) => handleUpdate(mapping.id, mapping.keyword, val)}
+                        className="h-7 w-full border-transparent hover:border-input focus:border-input bg-transparent px-2 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-1">
+                      <LabelMultiCombobox
+                        labels={labels}
+                        value={mapping.labelIds ?? []}
+                        onChange={(ids) => handleLabelsUpdate(mapping.id, ids)}
                         className="h-7 w-full border-transparent hover:border-input focus:border-input bg-transparent px-2 text-sm"
                       />
                     </td>
@@ -456,18 +481,18 @@ export function MappingsTable({ categories }: MappingsTableProps) {
   );
 }
 
-function CategoryCombobox({ 
-  categories, 
-  value, 
+function CategoryCombobox({
+  categories,
+  value,
   onChange,
   disabled = false,
   className = ""
-}: { 
-  categories: CategoryOption[], 
-  value: string, 
-  onChange: (val: string) => void,
-  disabled?: boolean,
-  className?: string
+}: {
+  categories: CategoryOption[];
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -484,10 +509,10 @@ function CategoryCombobox({
           />
         }
       >
-          <span className="truncate">
-            {value ? categories.find((c) => c.id === value)?.name : "Select category..."}
-          </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        <span className="truncate">
+          {value ? categories.find((c) => c.id === value)?.name : "Select category..."}
+        </span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
         <Command>
@@ -520,3 +545,94 @@ function CategoryCombobox({
     </Popover>
   );
 }
+
+function LabelMultiCombobox({
+  labels,
+  value,
+  onChange,
+  disabled = false,
+  className = ""
+}: {
+  labels: LabelOption[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<string[]>(value);
+
+  // Keep the local draft in sync when the row mapping changes externally.
+  useEffect(() => {
+    setPending(value);
+  }, [value]);
+
+  const toggle = (id: string) => {
+    setPending((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const commit = () => {
+    const normalized = pending.filter((id, i) => pending.indexOf(id) === i);
+    if (normalized.join("|") !== value.join("|")) {
+      onChange(normalized);
+    }
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (!isOpen) commit();
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className={cn("justify-between font-normal", className)}
+          />
+        }
+      >
+        <span className="truncate text-left w-full">
+          {value.length > 0 ? joinLabelNames(value, labels) : "No labels"}
+        </span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent className="w-[260px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search labels..." />
+          <CommandList>
+            <CommandEmpty>No label found.</CommandEmpty>
+            <CommandGroup>
+              {labels.map((label) => {
+                const isSelected = pending.includes(label.id);
+                return (
+                  <CommandItem
+                    key={label.id}
+                    value={label.name}
+                    onSelect={() => toggle(label.id)}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4 shrink-0",
+                        isSelected ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <span className="truncate">{label.name}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+

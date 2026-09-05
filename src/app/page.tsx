@@ -1,11 +1,12 @@
 import { getCategories } from "@/actions/categories";
 import { getAccounts } from "@/actions/accounts";
+import { getLabels } from "@/actions/labels";
 import { getAllMappings } from "@/actions/mappings";
 import { getContraKeywords } from "@/actions/contra-keywords";
 import { getKeywordCleaningRules } from "@/actions/keyword-cleaning-rules";
 import { getSessionById } from "@/actions/sessions";
 import { HomeClient } from "@/components/workspace/home-client";
-import { CategoryOption, AccountOption } from "@/types";
+import { CategoryOption, AccountOption, LabelOption } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { getAiSettings } from "@/actions/ai-settings";
 
@@ -19,9 +20,10 @@ export default async function HomePage({
   const params = await searchParams;
   const sessionParam = params.session;
 
-  const [categoriesRes, accountsRes, mappingsRes, defaultAiSettings, contraKeywordsRes, cleaningRulesRes, sessionRes] = await Promise.all([
+  const [categoriesRes, accountsRes, labelsRes, mappingsRes, defaultAiSettings, contraKeywordsRes, cleaningRulesRes, sessionRes] = await Promise.all([
     getCategories(),
     getAccounts(),
+    getLabels(),
     getAllMappings(),
     getAiSettings(),
     getContraKeywords(),
@@ -39,9 +41,15 @@ export default async function HomePage({
     name: acc.name,
   }));
 
-  const mappings: KeywordMapping[] = (mappingsRes.data || []).map((m: { keyword: string; categoryId: string | null; usageCount?: number }) => ({
+  const labels: LabelOption[] = (labelsRes.data || []).map((label: { id: string; name: string }) => ({
+    id: label.id,
+    name: label.name,
+  }));
+
+  const mappings: KeywordMapping[] = (mappingsRes.data || []).map((m: { keyword: string; categoryId: string | null; labelIds?: string[]; usageCount?: number }) => ({
     keyword: m.keyword,
     categoryId: m.categoryId,
+    labelIds: m.labelIds ?? [],
     usageCount: m.usageCount || 0,
   }));
 
@@ -56,6 +64,7 @@ export default async function HomePage({
     <HomeClient
       initialCategories={categories}
       initialAccounts={accounts}
+      initialLabels={labels}
       initialMappings={mappings}
       initialContraKeywords={contraKeywords}
       initialCleaningRules={cleaningRules}

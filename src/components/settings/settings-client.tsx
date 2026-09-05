@@ -1,33 +1,36 @@
 "use client";
 
 import * as React from "react";
-import { Settings2, Tag, Wallet, BookA, ArrowLeft, Key, Sparkles } from "lucide-react";
+import { Settings2, Tag, Tags, Wallet, BookA, ArrowLeft, Key, Sparkles } from "lucide-react";
 import { CategoriesTab } from "./categories-tab";
 import { AccountsTab } from "./accounts-tab";
+import { LabelsTab } from "./labels-tab";
 import { MappingsTable } from "./mappings-table";
 import { ContraKeywordsTab } from "./contra-keywords-tab";
 import { KeywordCleaningRulesTab } from "./keyword-cleaning-rules-tab";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { CategoryOption, AccountOption } from "@/types";
+import { CategoryOption, AccountOption, LabelOption } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface SettingsClientProps {
   categories: CategoryOption[];
   accounts: AccountOption[];
+  labels: LabelOption[];
 }
 
-type PanelId = "categories" | "accounts" | "mappings" | "contra" | "cleaning";
+type PanelId = "categories" | "accounts" | "labels" | "mappings" | "contra" | "cleaning";
 
 const NAV_ITEMS: { id: PanelId; label: string; icon: React.ElementType }[] = [
   { id: "categories", label: "Categories", icon: Tag },
   { id: "accounts", label: "Accounts", icon: Wallet },
+  { id: "labels", label: "Labels", icon: Tags },
   { id: "mappings", label: "Mappings", icon: BookA },
   { id: "contra", label: "Contra", icon: Key },
   { id: "cleaning", label: "Cleaning", icon: Sparkles },
 ];
 
-export function SettingsClient({ categories, accounts: _accounts }: SettingsClientProps) {
+export function SettingsClient({ categories, accounts: _accounts, labels }: SettingsClientProps) {
   const [activePanel, setActivePanel] = React.useState<PanelId>("mappings");
 
   return (
@@ -75,9 +78,10 @@ export function SettingsClient({ categories, accounts: _accounts }: SettingsClie
           <div className="h-full border rounded-md bg-muted/10 overflow-y-auto p-4">
             {activePanel === "categories" && <CategoriesTab />}
             {activePanel === "accounts" && <AccountsTab />}
+            {activePanel === "labels" && <LabelsTab />}
             {activePanel === "mappings" && (
               <div className="h-full flex flex-col">
-                <MappingsTable categories={categories} />
+                <MappingsTable categories={categories} labels={labels} />
               </div>
             )}
             {activePanel === "contra" && <ContraKeywordsTab />}

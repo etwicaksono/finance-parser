@@ -4,8 +4,8 @@ import { KeywordMapping, AliasMapping } from "./types";
 
 describe("suggestCategory", () => {
   const mappings: KeywordMapping[] = [
-    { keyword: "makan", categoryId: "c1", usageCount: 5 }, // exact: 1.0, fuzzy: 0.85+
-    { keyword: "bensin", categoryId: "c2", usageCount: 2 }, // exact: 0.97
+    { keyword: "makan", categoryId: "c1", labelIds: ["L1", "L2"], usageCount: 5 }, // exact: 1.0, fuzzy: 0.85+
+    { keyword: "bensin", categoryId: "c2", labelIds: ["L1"], usageCount: 2 }, // exact: 0.97
   ];
 
   const aliases: AliasMapping[] = [
@@ -19,6 +19,7 @@ describe("suggestCategory", () => {
     expect(result).not.toBeNull();
     expect(result?.source).toBe("exact");
     expect(result?.categoryId).toBe("c1");
+    expect(result?.labelIds).toEqual(["L1", "L2"]);
   });
 
   it("uses alias match if available", () => {
