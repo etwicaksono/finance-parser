@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CategoryOption, AccountOption, LabelOption, TransactionRow } from "@/types";
-import { resolveLabelNames } from "@/features/labels/label-utils";
 
 export interface GetColumnsProps {
   categories: CategoryOption[];
@@ -125,11 +124,27 @@ export function getColumns({
       enableSorting: false,
       cell: (info) => {
         const ids = (info.getValue() as string[]) ?? [];
-        const names = resolveLabelNames(ids, labels);
+        if (ids.length === 0) {
+          return <span className="text-muted-foreground">-</span>;
+        }
         return (
-          <span className="truncate" title={names.join(", ")}>
-            {names.length > 0 ? names.join(", ") : "-"}
-          </span>
+          // Each label renders as a chip; chips wrap onto new lines inside the
+          // cell when the column is too narrow, instead of overflowing.
+          <div className="flex flex-wrap items-start gap-1">
+            {ids.map((id) => {
+              const label = labels.find((l) => l.id === id);
+              if (!label) return null;
+              return (
+                <span
+                  key={id}
+                  title={label.name}
+                  className="inline-flex max-w-full items-center rounded-sm bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-primary"
+                >
+                  <span className="truncate">{label.name}</span>
+                </span>
+              );
+            })}
+          </div>
         );
       },
     },

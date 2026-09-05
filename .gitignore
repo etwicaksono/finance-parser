@@ -48,3 +48,4 @@ next-env.d.ts
 .factory
 qa-results
 reference
+.playwright-mcp

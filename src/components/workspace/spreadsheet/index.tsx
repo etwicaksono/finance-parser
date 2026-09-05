@@ -410,6 +410,61 @@ export function SpreadsheetTable({
     }
 
     const rows = table.getRowModel().rows;
+
+    const isCellInSelection = (rowIndex: number, colIndex: number) =>
+      ranges.some(
+        (range) =>
+          rowIndex >= range.minRow &&
+          rowIndex <= range.maxRow &&
+          colIndex >= range.minCol &&
+          colIndex <= range.maxCol,
+      );
+
+    // Full-row selection: when the selected cells cover every export column
+    // (Date, Account, Category, Labels, Amount, Item — Source is app-only and
+    // never part of the Google Sheets output) for every row inside the
+    // selection's bounding box, copy using the Google Sheets layout of
+    // "Copy Selected Rows" (Date | Account | Category | Amount | Item | <empty>
+    // | Labels) instead of pasting the in-app UI column order.
+    const dataColumns = columns
+      .map((col, index) => ({
+        index,
+        key: "accessorKey" in col ? (col as { accessorKey: string }).accessorKey : null,
+      }))
+      .filter((d): d is { index: number; key: string } => Boolean(d.key))
+      .filter((d) => d.key !== "receiptName")
+      .map((d) => d.index);
+
+    let isFullDataRowSelection = dataColumns.length > 0;
+    if (isFullDataRowSelection) {
+      outer: for (let r = minR; r <= maxR; r++) {
+        for (const c of dataColumns) {
+          if (!isCellInSelection(r, c)) {
+            isFullDataRowSelection = false;
+            break outer;
+          }
+        }
+      }
+    }
+
+    if (isFullDataRowSelection) {
+      const rowsToCopy = rows.slice(minR, maxR + 1);
+      const finalTsv = formatRowsForSheets(rowsToCopy.map((row) => row.original), {
+        labels,
+        categories,
+        accounts,
+        includeHeader,
+      });
+      navigator.clipboard.writeText(finalTsv).then(() => {
+        setCopyFlash(true);
+        setTimeout(() => setCopyFlash(false), 600);
+        if (onCopyRows) {
+          onCopyRows(rowsToCopy.map((row) => row.original));
+        }
+      });
+      return;
+    }
+
     const sanitize = (s: string) => {
       if (s.includes("\n") || s.includes("\r") || s.includes("\t") || s.includes('"')) {
         return `"${s.replace(/"/g, '""')}"`;
@@ -466,7 +521,7 @@ export function SpreadsheetTable({
         onCopyRows(copiedOriginals);
       }
     });
-  }, [selectionRange, multiSelections, table, columns, getCellValue, onCopyRows]);
+  }, [selectionRange, multiSelections, table, columns, getCellValue, onCopyRows, labels, categories, accounts, includeHeader]);
 
   // Copy All / Copy Selected Rows button
   // Output is remapped to the Google Sheets column layout used by the user:

@@ -27,6 +27,29 @@ export interface SheetsCopyOptions {
   includeHeader: boolean;
 }
 
+/** Serialize a single row into the fixed seven-field Google Sheets layout. */
+export function formatRowForSheets(
+  row: TransactionRow,
+  lookup: Pick<SheetsCopyOptions, "labels" | "categories" | "accounts">,
+): string {
+  const { labels, categories, accounts } = lookup;
+  const labelById = new Map(labels.map((label) => [label.id, label.name]));
+
+  const labelNames = (row.labelIds ?? [])
+    .map((id) => labelById.get(id))
+    .filter((name): name is string => Boolean(name));
+
+  return [
+    sanitizeTsvCell(row.date || ""),
+    sanitizeTsvCell(accounts.find((a) => a.id === row.accountId)?.name || ""),
+    sanitizeTsvCell(categories.find((c) => c.id === row.categoryId)?.name || ""),
+    row.amount !== null && row.amount !== undefined ? row.amount.toString() : "",
+    sanitizeTsvCell(row.item || ""),
+    "",
+    sanitizeTsvCell(labelNames.join(", ")),
+  ].join("\t");
+}
+
 /**
  * Serialize rows for Google Sheets as TSV using the fixed seven-field order.
  * The sixth field is intentionally left blank as a placeholder. Labels are
@@ -34,23 +57,8 @@ export interface SheetsCopyOptions {
  * be a multiple-selection dropdown.
  */
 export function formatRowsForSheets(rows: TransactionRow[], options: SheetsCopyOptions): string {
-  const { labels, categories, accounts, includeHeader } = options;
-  const labelById = new Map(labels.map((label) => [label.id, label.name]));
-
-  const tsvData = rows.map((row) => {
-    const labelNames = (row.labelIds ?? [])
-      .map((id) => labelById.get(id))
-      .filter((name): name is string => Boolean(name));
-    return [
-      sanitizeTsvCell(row.date || ""),
-      sanitizeTsvCell(accounts.find((a) => a.id === row.accountId)?.name || ""),
-      sanitizeTsvCell(categories.find((c) => c.id === row.categoryId)?.name || ""),
-      row.amount !== null && row.amount !== undefined ? row.amount.toString() : "",
-      sanitizeTsvCell(row.item || ""),
-      "",
-      sanitizeTsvCell(labelNames.join(", ")),
-    ].join("\t");
-  });
+  const { includeHeader } = options;
+  const tsvData = rows.map((row) => formatRowForSheets(row, options));
 
   return includeHeader
     ? [GOOGLE_SHEETS_HEADERS.join("\t"), ...tsvData].join("\n")

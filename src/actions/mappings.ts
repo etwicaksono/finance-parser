@@ -271,26 +271,33 @@ export async function batchAddMappings(
   if (validMappings.length === 0) return { error: "No valid mappings provided" };
 
   try {
-    const values = validMappings.map((m) => ({
-      keyword: m.keyword.trim().toLowerCase(),
-      categoryId: m.categoryId,
-      usageCount: 1,
-      createdBy,
-      updatedBy: createdBy,
-    }));
-
-    await db
-      .insert(keywordMappings)
-      .values(values)
-      .onConflictDoUpdate({
-        target: keywordMappings.keyword,
-        set: {
-          categoryId: sql`EXCLUDED.category_id`,
-          usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`,
-          updatedBy: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.updatedBy} ELSE ${createdBy} END`,
-          updatedAt: new Date(),
-        },
-      });
+    // Upsert one row at a time inside a transaction. A single multi-row
+    // INSERT ... ON CONFLICT fails when the same keyword appears more than
+    // once in the batch ("ON CONFLICT DO UPDATE command cannot affect row a
+    // second time"), which happens when copied rows repeat an item string
+    // (e.g. Copy All Rows over a receipt with the same product twice).
+    await db.transaction(async (tx) => {
+      for (const m of validMappings) {
+        await tx
+          .insert(keywordMappings)
+          .values({
+            keyword: m.keyword.trim().toLowerCase(),
+            categoryId: m.categoryId,
+            usageCount: 1,
+            createdBy,
+            updatedBy: createdBy,
+          })
+          .onConflictDoUpdate({
+            target: keywordMappings.keyword,
+            set: {
+              categoryId: sql`EXCLUDED.category_id`,
+              usageCount: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.usageCount} + 1 ELSE 1 END`,
+              updatedBy: sql`CASE WHEN ${keywordMappings.categoryId} = EXCLUDED.category_id THEN ${keywordMappings.updatedBy} ELSE ${createdBy} END`,
+              updatedAt: new Date(),
+            },
+          });
+      }
+    });
 
     revalidateCache();
     return { success: true };
