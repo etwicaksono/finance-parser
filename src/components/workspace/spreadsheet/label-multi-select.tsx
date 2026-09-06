@@ -43,6 +43,8 @@ function sameIds(a: string[], b: string[]): boolean {
  *
  * Behavior mirrors the other spreadsheet dropdowns:
  * - Enter applies and moves down, Tab applies and moves right.
+ * - Enter over a highlighted option (reached via arrow keys or by hovering
+ *   it) toggles that label first, then applies and moves down.
  * - Escape discards changes.
  * - Clicking elsewhere applies the pending selection without moving focus.
  */
@@ -59,6 +61,10 @@ export function LabelMultiSelectDropdown({
   const [search, setSearch] = React.useState(initialSearch);
   const [pending, setPending] = React.useState<string[]>(initialIds);
   const commandRef = React.useRef<HTMLDivElement>(null);
+  // True when the current highlight was reached by the user (arrow keys or
+  // hovering an option). Plain Enter without navigation never toggles a label,
+  // so the auto-highlighted first option cannot be picked by accident.
+  const navIntentRef = React.useRef(false);
 
   const dirty = !sameIds(initialIds, pending);
 
@@ -72,7 +78,34 @@ export function LabelMultiSelectDropdown({
     setPending([]);
   };
 
+  // Enter pressed while a highlighted option exists: toggle that label and
+  // apply & move down. Returns false when nothing should be picked (no
+  // user navigation, no highlighted match) so callers keep the plain-Enter
+  // "apply and move down" behaviour.
+  const toggleAndCommitDown = () => {
+    const highlighted = commandRef.current?.querySelector<HTMLElement>('[data-selected="true"]');
+    const value = highlighted?.getAttribute("data-value");
+    const match = value
+      ? options.find((o) => o.name.toLowerCase() === value.toLowerCase())
+      : undefined;
+    if (!navIntentRef.current || !match) return false;
+
+    navIntentRef.current = false;
+    const next = pending.includes(match.id)
+      ? pending.filter((id) => id !== match.id)
+      : [...pending, match.id];
+    setPending(next);
+    setOpen(false);
+    onCommitDown(next);
+    return true;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      // Let cmdk move the highlight; the next Enter will pick that option.
+      navIntentRef.current = true;
+      return;
+    }
     if (e.key === "Tab") {
       e.preventDefault();
       e.stopPropagation();
@@ -86,6 +119,7 @@ export function LabelMultiSelectDropdown({
     } else if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
+      if (toggleAndCommitDown()) return;
       setOpen(false);
       onCommitDown(pending);
     }
@@ -109,7 +143,14 @@ export function LabelMultiSelectDropdown({
       {/* Invisible trigger anchoring the editor to the spreadsheet cell. */}
       <PopoverTrigger className="h-full w-full bg-transparent absolute inset-0 z-0 opacity-0" />
       <PopoverContent className="w-[220px] p-0" align="start" sideOffset={0}>
-        <Command ref={commandRef}>
+        <Command
+          ref={commandRef}
+          onPointerMove={(e) => {
+            if ((e.target as HTMLElement).closest("[cmdk-item]")) {
+              navIntentRef.current = true;
+            }
+          }}
+        >
           <div className="flex items-center justify-between px-2 pt-1.5 pb-1 border-b">
             <span className="text-xs text-muted-foreground">
               {pending.length > 0 ? `${pending.length} label(s)` : "No labels"}
@@ -145,7 +186,10 @@ export function LabelMultiSelectDropdown({
                   <CommandItem
                     key={option.id}
                     value={option.name}
-                    onSelect={() => toggle(option.id)}
+                    onSelect={() => {
+                      navIntentRef.current = false;
+                      toggle(option.id);
+                    }}
                     className="cursor-pointer"
                   >
                     <div
