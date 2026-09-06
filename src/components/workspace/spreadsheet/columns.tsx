@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CategoryOption, AccountOption, LabelOption, TransactionRow } from "@/types";
+import { resolveLabelChipColors } from "@/features/labels/label-colors";
 
 export interface GetColumnsProps {
   categories: CategoryOption[];
@@ -134,11 +135,13 @@ export function getColumns({
             {ids.map((id) => {
               const label = labels.find((l) => l.id === id);
               if (!label) return null;
+              const chipStyle = resolveLabelChipColors(label);
               return (
                 <span
                   key={id}
                   title={label.name}
                   className="inline-flex max-w-full items-center rounded-sm bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-primary"
+                  style={chipStyle.backgroundColor || chipStyle.color ? chipStyle : undefined}
                 >
                   <span className="truncate">{label.name}</span>
                 </span>

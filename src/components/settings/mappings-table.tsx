@@ -30,6 +30,10 @@ import {
 import { toast } from "sonner";
 import { CategoryOption, LabelOption } from "@/types";
 import { joinLabelNames } from "@/features/labels/label-utils";
+import {
+  hasCustomLabelColors,
+  resolveLabelChipColors,
+} from "@/features/labels/label-colors";
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 
@@ -612,6 +616,8 @@ function LabelMultiCombobox({
             <CommandGroup>
               {labels.map((label) => {
                 const isSelected = pending.includes(label.id);
+                const chipStyle = resolveLabelChipColors(label);
+                const hasColors = hasCustomLabelColors(label);
                 return (
                   <CommandItem
                     key={label.id}
@@ -624,6 +630,18 @@ function LabelMultiCombobox({
                         isSelected ? "opacity-100" : "opacity-0"
                       )}
                     />
+                    {hasColors && (
+                      <span
+                        aria-hidden
+                        className="relative mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset ring-black/10"
+                        style={{ backgroundColor: chipStyle.backgroundColor }}
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: chipStyle.color }}
+                        />
+                      </span>
+                    )}
                     <span className="truncate">{label.name}</span>
                   </CommandItem>
                 );

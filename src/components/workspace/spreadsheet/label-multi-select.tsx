@@ -5,6 +5,10 @@ import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LabelOption } from "@/types";
 import {
+  hasCustomLabelColors,
+  resolveLabelChipColors,
+} from "@/features/labels/label-colors";
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -182,6 +186,8 @@ export function LabelMultiSelectDropdown({
             <CommandGroup>
               {options.map((option) => {
                 const isSelected = pending.includes(option.id);
+                const chipStyle = resolveLabelChipColors(option);
+                const hasColors = hasCustomLabelColors(option);
                 return (
                   <CommandItem
                     key={option.id}
@@ -202,6 +208,18 @@ export function LabelMultiSelectDropdown({
                     >
                       <Check className="h-3 w-3" />
                     </div>
+                    {hasColors && (
+                      <span
+                        aria-hidden
+                        className="relative mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset ring-black/10"
+                        style={{ backgroundColor: chipStyle.backgroundColor }}
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: chipStyle.color }}
+                        />
+                      </span>
+                    )}
                     <span className="truncate">{option.name}</span>
                   </CommandItem>
                 );

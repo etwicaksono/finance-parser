@@ -4,6 +4,27 @@ import { db } from "@/db";
 import { labels } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { normalizeHexColor, type LabelColorFields } from "@/features/labels/label-colors";
+
+type ColorPatch = { textColor: string | null; bgColor: string | null };
+
+/**
+ * Validate optional label colors. Empty strings and null both mean "no custom
+ * color"; anything else must be a hex color, normalized to lowercase #rrggbb.
+ */
+function parseColorPatch(colors: LabelColorFields = {}): { patch: ColorPatch } | { error: string } {
+  const rawText = colors.textColor === "" ? null : colors.textColor ?? null;
+  const rawBg = colors.bgColor === "" ? null : colors.bgColor ?? null;
+  const textColor = rawText === null ? null : normalizeHexColor(rawText);
+  const bgColor = rawBg === null ? null : normalizeHexColor(rawBg);
+  if (rawText !== null && textColor === null) {
+    return { error: "Text color must be a hex color like #3b82f6" };
+  }
+  if (rawBg !== null && bgColor === null) {
+    return { error: "Background color must be a hex color like #fde047" };
+  }
+  return { patch: { textColor, bgColor } };
+}
 
 async function findLabelByName(name: string, excludeId?: string) {
   const query = db
@@ -37,7 +58,7 @@ export async function getLabels() {
   }
 }
 
-export async function createLabel(name: string) {
+export async function createLabel(name: string, colors: LabelColorFields = {}) {
   const trimmed = name.trim();
   if (!trimmed) {
     return { error: "Label name is required" };
@@ -46,13 +67,25 @@ export async function createLabel(name: string) {
     return { error: "Label names cannot contain commas" };
   }
 
+  const parsed = parseColorPatch(colors);
+  if ("error" in parsed) {
+    return { error: parsed.error };
+  }
+
   try {
     const existing = await findLabelByName(trimmed);
     if (existing) {
       return { error: "Label already exists" };
     }
 
-    const inserted = await db.insert(labels).values({ name: trimmed }).returning();
+    const inserted = await db
+      .insert(labels)
+      .values({
+        name: trimmed,
+        textColor: parsed.patch.textColor,
+        bgColor: parsed.patch.bgColor,
+      })
+      .returning();
     revalidateCache();
     return { data: inserted[0] };
   } catch (error) {
@@ -61,13 +94,22 @@ export async function createLabel(name: string) {
   }
 }
 
-export async function updateLabel(id: string, name: string) {
+export async function updateLabel(
+  id: string,
+  name: string,
+  colors: LabelColorFields | undefined = undefined,
+) {
   const trimmed = name.trim();
   if (!id || !trimmed) {
     return { error: "Label ID and name are required" };
   }
   if (trimmed.includes(",")) {
     return { error: "Label names cannot contain commas" };
+  }
+
+  const parsed = colors ? parseColorPatch(colors) : undefined;
+  if (parsed && "error" in parsed) {
+    return { error: parsed.error };
   }
 
   try {
@@ -78,7 +120,10 @@ export async function updateLabel(id: string, name: string) {
 
     const updated = await db
       .update(labels)
-      .set({ name: trimmed })
+      .set({
+        name: trimmed,
+        ...(parsed ? { textColor: parsed.patch.textColor, bgColor: parsed.patch.bgColor } : {}),
+      })
       .where(eq(labels.id, id))
       .returning();
 

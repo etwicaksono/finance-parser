@@ -41,9 +41,11 @@ export default async function HomePage({
     name: acc.name,
   }));
 
-  const labels: LabelOption[] = (labelsRes.data || []).map((label: { id: string; name: string }) => ({
+  const labels: LabelOption[] = (labelsRes.data || []).map((label) => ({
     id: label.id,
     name: label.name,
+    ...(label.textColor ? { textColor: label.textColor } : {}),
+    ...(label.bgColor ? { bgColor: label.bgColor } : {}),
   }));
 
   const mappings: KeywordMapping[] = (mappingsRes.data || []).map((m: { keyword: string; categoryId: string | null; labelIds?: string[]; usageCount?: number }) => ({

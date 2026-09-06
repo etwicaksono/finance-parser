@@ -17,6 +17,10 @@ export interface AccountOption {
 export interface LabelOption {
   id: string;
   name: string;
+  /** Optional #rrggbb chip text color; falls back to the default styling. */
+  textColor?: string;
+  /** Optional #rrggbb chip background color; falls back to the default styling. */
+  bgColor?: string;
 }
 
 export interface SuggestionResult {

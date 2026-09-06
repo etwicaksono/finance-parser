@@ -23,9 +23,11 @@ export default async function SettingsPage() {
     name: acc.name,
   }));
 
-  const labels: LabelOption[] = (labelsRes.data || []).map((label: { id: string; name: string }) => ({
+  const labels: LabelOption[] = (labelsRes.data || []).map((label) => ({
     id: label.id,
     name: label.name,
+    ...(label.textColor ? { textColor: label.textColor } : {}),
+    ...(label.bgColor ? { bgColor: label.bgColor } : {}),
   }));
 
   return (
