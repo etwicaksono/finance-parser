@@ -1,8 +1,12 @@
 import { SuggestionMatch } from "@/features/suggestions/types";
 
+/** Whether a category represents money in, money out, or both. */
+export type CategorySign = "income" | "expense" | "both";
+
 export interface CategoryOption {
   id: string;
   name: string;
+  signType?: CategorySign;
 }
 
 export interface AccountOption {

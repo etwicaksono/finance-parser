@@ -1,0 +1,1 @@
+ALTER TABLE "categories" ADD COLUMN "sign_type" varchar(16) DEFAULT 'expense' NOT NULL;

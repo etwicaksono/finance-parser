@@ -22,6 +22,13 @@
       "when": 1788594971328,
       "tag": "0002_charming_the_order",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788665222397,
+      "tag": "0003_modern_nightshade",
+      "breakpoints": true
     }
   ]
 }

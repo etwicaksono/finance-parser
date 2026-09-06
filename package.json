@@ -16,7 +16,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:seed-category-sign": "tsx src/db/seed/import-category-taxonomy.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

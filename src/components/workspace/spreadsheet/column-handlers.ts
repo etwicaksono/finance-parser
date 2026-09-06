@@ -1,6 +1,5 @@
 import { TransactionRow, CategoryOption, AccountOption, LabelOption } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
-import { getCategorySign } from "@/features/validation/category-sign";
 import { extractAnnotatedAmount } from "@/features/parser/price-annotation";
 import { parseLabelValue, joinLabelNames } from "@/features/labels/label-utils";
 
@@ -36,7 +35,8 @@ export interface ColumnHandler {
 
 /**
  * Adjust the sign of a numeric amount based on the category's sign type
- * (income → positive, expense → negative, unless it's a contra item).
+ * stored in the database (income → positive, expense → negative, unless it's
+ * a contra item; "both" leaves the amount untouched).
  */
 function adjustAmountSign(
   amount: number,
@@ -44,10 +44,10 @@ function adjustAmountSign(
   ctx: ColumnHandlerContext,
   itemText: string,
 ): number {
-  const catName = ctx.categories.find((c) => c.id === categoryId)?.name;
-  if (!catName) return amount;
+  const category = ctx.categories.find((c) => c.id === categoryId);
+  if (!category) return amount;
 
-  const sign = getCategorySign(catName);
+  const sign = category.signType ?? "both";
   const isContraItem = ctx.contraKeywords.some((kw) =>
     itemText.toLowerCase().includes(kw.toLowerCase()),
   );

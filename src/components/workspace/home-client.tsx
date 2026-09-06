@@ -9,7 +9,6 @@ import { TransactionRow, CategoryOption, AccountOption, LabelOption, SessionImag
 import { parseChat } from "@/features/parser/chat-parser";
 import { suggestCategory } from "@/features/suggestions/category-suggester";
 import { detectDuplicates } from "@/features/validation/duplicate-detector";
-import { getCategorySign } from "@/features/validation/category-sign";
 import { format } from "date-fns";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { batchClassifyTransactions } from "@/actions/classify";
@@ -261,9 +260,9 @@ export function HomeClient({
 
           if (suggestion.categoryId) {
             row.categoryId = suggestion.categoryId;
-            const catName = initialCategories.find(c => c.id === row.categoryId)?.name;
-            if (catName) {
-              const sign = getCategorySign(catName);
+            const matchedCategory = initialCategories.find(c => c.id === row.categoryId);
+            if (matchedCategory) {
+              const sign = matchedCategory.signType ?? "both";
               const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
 
               if (sign === "income") row.amount = row.amount ? Math.abs(row.amount) : row.amount;
@@ -296,7 +295,7 @@ export function HomeClient({
                 );
                 if (matchedCategory) {
                   row.categoryId = matchedCategory.id;
-                  const sign = getCategorySign(matchedCategory.name);
+                  const sign = matchedCategory.signType ?? "both";
                   const isContraItem = initialContraKeywords.some(kw => row.item.toLowerCase().includes(kw.toLowerCase()));
 
                   if (row.amount) {
@@ -424,9 +423,9 @@ export function HomeClient({
            newRow.labelIds = match.labelIds ?? [];
            newRow.isUnmappedItem = false;
 
-           const catName = initialCategories.find(c => c.id === match.categoryId)?.name;
-           if (catName && typeof newRow.amount === "number") {
-             const sign = getCategorySign(catName);
+           const matchedCategory = initialCategories.find(c => c.id === match.categoryId);
+           if (matchedCategory && typeof newRow.amount === "number") {
+             const sign = matchedCategory.signType ?? "both";
              const isContraItem = initialContraKeywords.some(kw => lowerItem.includes(kw.toLowerCase()));
              if (sign === "income") newRow.amount = Math.abs(newRow.amount);
              else if (sign === "expense") {
@@ -466,7 +465,7 @@ export function HomeClient({
                 newRow.categoryId = matchedCategory.id;
                 newRow.isUnmappedItem = false;
                 
-                const sign = getCategorySign(matchedCategory.name);
+                const sign = matchedCategory.signType ?? "both";
                 const isContraItem = initialContraKeywords.some(kw => newRow.item.toLowerCase().includes(kw.toLowerCase()));
 
                 if (typeof newRow.amount === "number") {
