@@ -1,27 +1,33 @@
 "use client";
 
 import * as React from "react";
-import { Settings2, Tag, Tags, Wallet, BookA, ArrowLeft, Key, Sparkles } from "lucide-react";
-import { CategoriesTab } from "./categories-tab";
-import { AccountsTab } from "./accounts-tab";
-import { LabelsTab } from "./labels-tab";
-import { MappingsTable } from "./mappings-table";
-import { ContraKeywordsTab } from "./contra-keywords-tab";
-import { KeywordCleaningRulesTab } from "./keyword-cleaning-rules-tab";
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { CategoryOption, AccountOption, LabelOption } from "@/types";
+import {
+  Settings2,
+  Tag,
+  Tags,
+  Wallet,
+  BookA,
+  ArrowLeft,
+  Key,
+  Sparkles,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
-interface SettingsClientProps {
-  categories: CategoryOption[];
-  accounts: AccountOption[];
-  labels: LabelOption[];
-}
+export type SettingsPanelId =
+  | "categories"
+  | "accounts"
+  | "labels"
+  | "mappings"
+  | "contra"
+  | "cleaning";
 
-type PanelId = "categories" | "accounts" | "labels" | "mappings" | "contra" | "cleaning";
-
-const NAV_ITEMS: { id: PanelId; label: string; icon: React.ElementType }[] = [
+export const SETTINGS_NAV_ITEMS: {
+  id: SettingsPanelId;
+  label: string;
+  icon: React.ElementType;
+}[] = [
   { id: "categories", label: "Categories", icon: Tag },
   { id: "accounts", label: "Accounts", icon: Wallet },
   { id: "labels", label: "Labels", icon: Tags },
@@ -30,9 +36,18 @@ const NAV_ITEMS: { id: PanelId; label: string; icon: React.ElementType }[] = [
   { id: "cleaning", label: "Cleaning", icon: Sparkles },
 ];
 
-export function SettingsClient({ categories, accounts: _accounts, labels }: SettingsClientProps) {
-  const [activePanel, setActivePanel] = React.useState<PanelId>("mappings");
-
+/**
+ * Shared chrome for the per-panel settings routes. Each route renders the same
+ * header + sidebar; the sidebar items are real links so every panel has its
+ * own URL (/settings/categories, /settings/labels, ...).
+ */
+export function SettingsShell({
+  active,
+  children,
+}: {
+  active: SettingsPanelId;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="flex h-14 items-center gap-4 border-b bg-card px-4 lg:px-6">
@@ -51,14 +66,15 @@ export function SettingsClient({ categories, accounts: _accounts, labels }: Sett
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <nav className="w-48 shrink-0 border-r bg-card p-3 space-y-1">
-          {NAV_ITEMS.map((item) => {
+        <nav className="w-48 shrink-0 border-r bg-card p-3 space-y-1" aria-label="Settings sections">
+          {SETTINGS_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const isActive = activePanel === item.id;
+            const isActive = active === item.id;
             return (
-              <button
+              <Link
                 key={item.id}
-                onClick={() => setActivePanel(item.id)}
+                href={`/settings/${item.id}`}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
@@ -68,7 +84,7 @@ export function SettingsClient({ categories, accounts: _accounts, labels }: Sett
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 {item.label}
-              </button>
+              </Link>
             );
           })}
         </nav>
@@ -76,16 +92,7 @@ export function SettingsClient({ categories, accounts: _accounts, labels }: Sett
         {/* Content */}
         <div className="flex-1 overflow-hidden p-6">
           <div className="h-full border rounded-md bg-muted/10 overflow-y-auto p-4">
-            {activePanel === "categories" && <CategoriesTab />}
-            {activePanel === "accounts" && <AccountsTab />}
-            {activePanel === "labels" && <LabelsTab />}
-            {activePanel === "mappings" && (
-              <div className="h-full flex flex-col">
-                <MappingsTable categories={categories} labels={labels} />
-              </div>
-            )}
-            {activePanel === "contra" && <ContraKeywordsTab />}
-            {activePanel === "cleaning" && <KeywordCleaningRulesTab />}
+            {children}
           </div>
         </div>
       </div>
