@@ -6,7 +6,7 @@ import { getContraKeywords } from "@/actions/contra-keywords";
 import { getKeywordCleaningRules } from "@/actions/keyword-cleaning-rules";
 import { getSessionById } from "@/actions/sessions";
 import { HomeClient } from "@/components/workspace/home-client";
-import { CategoryOption, AccountOption, LabelOption } from "@/types";
+import { CategoryOption, AccountOption, LabelOption, CategorySign } from "@/types";
 import { KeywordMapping } from "@/features/suggestions/types";
 import { getAiSettings } from "@/actions/ai-settings";
 
@@ -31,9 +31,10 @@ export default async function HomePage({
     sessionParam ? getSessionById(sessionParam) : Promise.resolve(null),
   ]);
 
-  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat: { id: string; name: string }) => ({
+  const categories: CategoryOption[] = (categoriesRes.data || []).map((cat) => ({
     id: cat.id,
     name: cat.name,
+    ...(cat.signType ? { signType: cat.signType as CategorySign } : {}),
   }));
 
   const accounts: AccountOption[] = (accountsRes.data || []).map((acc: { id: string; name: string }) => ({
